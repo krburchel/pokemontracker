@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PokéTracker</title>
+<meta name="description" content="Living dex and shiny hunt tracker, synced with the PokemonTracker Mac app.">
+<meta name="theme-color" content="#e3350d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="PokéTracker">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="auth" class="auth" hidden>
+  <div class="auth-card">
+    <img src="icon-192.png" alt="" width="72" height="72">
+    <h1>PokéTracker</h1>
+    <p class="muted">Sign in with the same account you use in the Mac app's Settings.</p>
+    <form id="auth-form">
+      <input id="auth-email" type="email" placeholder="Email" autocomplete="username" required>
+      <input id="auth-password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required>
+      <button type="submit" class="primary" data-mode="signin">Sign In</button>
+      <button type="submit" class="ghost" data-mode="signup">Create Account</button>
+    </form>
+    <p id="auth-msg" class="msg" role="status"></p>
+  </div>
+</div>
+
+<div id="app" class="app" hidden>
+  <header class="topbar">
+    <h1 id="title">Living Dex</h1>
+    <button id="sync-btn" class="sync-btn" aria-label="Sync status and account">
+      <span id="sync-dot" class="dot"></span>
+    </button>
+  </header>
+
+  <main>
+    <section id="tab-dex" class="tab">
+      <div class="controls">
+        <div class="row">
+          <select id="game-select" aria-label="Game"></select>
+          <select id="pt-select" aria-label="Playthrough"></select>
+        </div>
+        <div id="dex-progress" class="progress-line"></div>
+        <div class="row">
+          <div class="seg" role="group" aria-label="Tap marks">
+            <button data-mode="regular" class="on">Caught</button>
+            <button data-mode="shiny">✨ Shiny</button>
+          </div>
+          <input id="dex-search" type="search" placeholder="Search" aria-label="Search">
+        </div>
+        <div class="row">
+          <select id="gen-filter" aria-label="Generation"></select>
+          <select id="type-filter" aria-label="Type"></select>
+          <select id="status-filter" aria-label="Status">
+            <option value="all">All</option>
+            <option value="missing">Missing</option>
+            <option value="caught">Caught</option>
+          </select>
+        </div>
+      </div>
+      <div id="dex-grid" class="grid"></div>
+    </section>
+
+    <section id="tab-hunts" class="tab" hidden>
+      <button id="new-hunt" class="primary wide">＋ New Hunt</button>
+      <div id="hunt-list"></div>
+    </section>
+
+    <section id="tab-stats" class="tab" hidden>
+      <div id="stats"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-tab="dex" class="on"><span>◉</span>Dex</button>
+    <button data-tab="hunts"><span>✨</span>Hunts</button>
+    <button data-tab="stats"><span>▤</span>Stats</button>
+  </nav>
+</div>
+
+<dialog id="account-dlg">
+  <h2>Sync</h2>
+  <p id="account-email"></p>
+  <p id="account-status" class="muted"></p>
+  <div class="dlg-actions">
+    <button id="sync-now">Sync Now</button>
+    <button id="sign-out" class="danger">Sign Out</button>
+    <button value="close" formmethod="dialog" class="ghost" onclick="this.closest('dialog').close()">Done</button>
+  </div>
+</dialog>
+
+<dialog id="hunt-dlg">
+  <form id="hunt-form" method="dialog">
+    <h2>New Shiny Hunt</h2>
+    <label>Target
+      <input id="hunt-species" type="search" placeholder="Search Pokémon" autocomplete="off" required>
+    </label>
+    <div id="hunt-species-results" class="picker"></div>
+    <label>Method
+      <select id="hunt-method"></select>
+    </label>
+    <label class="check"><input id="hunt-charm" type="checkbox"> Shiny Charm</label>
+    <label>Starting encounters
+      <input id="hunt-start" type="number" min="0" value="0" inputmode="numeric">
+    </label>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary">Start Hunt</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="caught-dlg">
+  <form id="caught-form" method="dialog">
+    <h2>Shiny caught! 🎉</h2>
+    <p id="caught-name" class="muted"></p>
+    <label>Caught in
+      <select id="caught-game"></select>
+    </label>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary">Mark Caught</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="count-dlg">
+  <form id="count-form" method="dialog">
+    <h2>Set encounters</h2>
+    <input id="count-input" type="number" min="0" inputmode="numeric">
+    <div class="dlg-actions">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
