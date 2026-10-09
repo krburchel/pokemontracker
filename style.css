@@ -205,3 +205,10 @@ dialog label.check input { width: auto; }
 .picker button { display: flex; align-items: center; gap: 8px; text-align: left; background: var(--bg); padding: 4px 10px; }
 .picker button img { width: 40px; height: 40px; image-rendering: pixelated; }
 .picker button.on { outline: 2px solid var(--accent); }
+
+.or { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: var(--muted); font-size: 13px; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+button.google { width: 100%; border: 1px solid var(--line); font-weight: 600; }
+.mac-pw { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; font-size: 14px; }
+.mac-pw form { display: flex; gap: 8px; }
+.mac-pw input { flex: 1; }

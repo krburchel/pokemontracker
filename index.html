@@ -27,6 +27,8 @@
       <button type="submit" class="primary" data-mode="signin">Sign In</button>
       <button type="submit" class="ghost" data-mode="signup">Create Account</button>
     </form>
+    <div class="or"><span>or</span></div>
+    <button id="google-signin" class="google">Continue with Google</button>
     <p id="auth-msg" class="msg" role="status"></p>
   </div>
 </div>
@@ -88,6 +90,14 @@
   <h2>Sync</h2>
   <p id="account-email"></p>
   <p id="account-status" class="muted"></p>
+  <div id="mac-password-box" class="mac-pw" hidden>
+    <p><b>Set Mac password.</b> You signed in with Google; the Mac app signs in with email and password. Add a password to this same account:</p>
+    <form id="mac-password-form">
+      <input id="mac-password" type="password" placeholder="New password (6+ characters)" minlength="6" autocomplete="new-password" required>
+      <button type="submit" class="primary">Set Password</button>
+    </form>
+    <p id="mac-password-msg" class="msg" role="status"></p>
+  </div>
   <div class="dlg-actions">
     <button id="sync-now">Sync Now</button>
     <button id="sign-out" class="danger">Sign Out</button>
@@ -141,7 +151,9 @@
   </form>
 </dialog>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="vendor/firebase/firebase-app-compat.js"></script>
+<script src="vendor/firebase/firebase-auth-compat.js"></script>
+<script src="vendor/firebase/firebase-firestore-compat.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

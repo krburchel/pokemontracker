@@ -1,19 +1,24 @@
 'use strict';
 
 // ---------------------------------------------------------------------------
-// Config. The publishable key is safe in the page: row-level security limits
-// every request to the signed-in user's own rows.
+// Config. These Firebase values are public by design: the security rules in
+// firestore.rules limit every request to the signed-in user's own records.
 // ---------------------------------------------------------------------------
-const SB_URL = 'https://cmgajwvtnjqcoexzhgqa.supabase.co';
-const SB_KEY = 'sb_publishable_wZiRW1VLIg_aEepzfQMAHQ_zh0P7Isb';
+firebase.initializeApp({
+  apiKey: 'AIzaSyBBYo2uN1nfQMBHMb_C_XXTSnex6tp99dE',
+  authDomain: 'pokemon-tracker-8d5ac.firebaseapp.com',
+  projectId: 'pokemon-tracker-8d5ac',
+  storageBucket: 'pokemon-tracker-8d5ac.firebasestorage.app',
+  messagingSenderId: '869525751786',
+  appId: '1:869525751786:web:2ec719a2da6bc79d47d493',
+});
+const auth = firebase.auth();
+const db = firebase.firestore();
 const POLL_MS = 20000;
 const PULL_OVERLAP_MS = 120000;
-const CACHE_KEY = 'pt-cache-v1';
+const CACHE_KEY = 'pt-cache-v2';   // v1 was the Supabase era
 const PREFS_KEY = 'pt-prefs-v1';
-
-const sb = supabase.createClient(SB_URL, SB_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true },
-});
+try { localStorage.removeItem('pt-cache-v1'); } catch { /* ignore */ }
 
 // Must match HuntMethod raw values in the Mac app.
 const METHODS = ['Full Odds', 'Masuda Method', 'SOS Chain', 'Mass Outbreak',
@@ -49,6 +54,9 @@ const gameGroup = (g) => (g.releaseGen === 'cross' ? 'Cross-Game' : `Gen ${g.rel
 
 // ---------------------------------------------------------------------------
 // Sync store: every record is a row {id, kind, data, deleted, updated_at}.
+// In Firestore each one is users/{uid}/records/{id} = {kind, json, deleted,
+// updatedAt}, the same documents the Mac app reads and writes.
+// updated_at here is "seconds.nanoseconds" so it compares as a string.
 // Local writes go into `pending` and are flushed in the background; pulls
 // skip rows with unsent local edits so a tap is never overwritten.
 // ---------------------------------------------------------------------------
@@ -82,34 +90,38 @@ function saveCache() {
   });
 }
 
-function overlapped(cursor) {
-  // Server timestamps look like 2026-10-07T16:40:00.123456+00:00 (UTC).
-  const t = Date.parse(cursor.slice(0, 19) + 'Z');
-  return Number.isFinite(t) ? new Date(t - PULL_OVERLAP_MS).toISOString() : cursor;
-}
+const recordsRef = () => db.collection('users').doc(store.userId).collection('records');
+const stamp = (ts) => `${ts.seconds}.${String(ts.nanoseconds).padStart(9, '0')}`;
 
 async function pull() {
   const pageSize = 1000;
-  let from = 0;
   let changed = false;
   let newest = store.cursor;
+  let last = null;
   for (;;) {
-    let q = sb.from('records').select('id,kind,data,deleted,updated_at')
-      .order('updated_at', { ascending: true }).order('id', { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (store.cursor) q = q.gt('updated_at', overlapped(store.cursor));
-    const { data, error } = await q;
-    if (error) throw error;
-    for (const r of data) {
-      if (!newest || r.updated_at > newest) newest = r.updated_at;
-      if (store.pending.has(r.id)) continue;
-      const cur = store.rows.get(r.id);
-      if (cur && cur.updated_at === r.updated_at) continue;
-      store.rows.set(r.id, r);
+    let q = recordsRef();
+    if (store.cursor) {
+      const since = Number(store.cursor.split('.')[0]) * 1000 - PULL_OVERLAP_MS;
+      q = q.where('updatedAt', '>', firebase.firestore.Timestamp.fromMillis(since));
+    }
+    q = q.orderBy('updatedAt').orderBy(firebase.firestore.FieldPath.documentId()).limit(pageSize);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get({ source: 'server' });
+    for (const doc of snap.docs) {
+      const f = doc.data();
+      if (!f.updatedAt) continue;
+      const updated = stamp(f.updatedAt);
+      if (!newest || updated > newest) newest = updated;
+      if (store.pending.has(doc.id)) continue;
+      const cur = store.rows.get(doc.id);
+      if (cur && cur.updated_at === updated) continue;
+      let data;
+      try { data = JSON.parse(f.json); } catch { continue; }
+      store.rows.set(doc.id, { id: doc.id, kind: f.kind, data, deleted: !!f.deleted, updated_at: updated });
       changed = true;
     }
-    if (data.length < pageSize) break;
-    from += pageSize;
+    if (snap.size < pageSize) break;
+    last = snap.docs[snap.docs.length - 1];
   }
   store.cursor = newest;
   return changed;
@@ -127,15 +139,26 @@ async function flush() {
   flushing = true;
   const batch = [...store.pending.values()];
   setStatus('busy');
-  const { error } = await sb.from('records').upsert(
-    batch.map((r) => ({ user_id: store.userId, id: r.id, kind: r.kind, data: r.data, deleted: r.deleted })),
-    { onConflict: 'user_id,id' });
-  flushing = false;
-  if (error) {
-    setStatus('error', describeError(error));
+  try {
+    for (let i = 0; i < batch.length; i += 500) {
+      const wb = db.batch();
+      for (const r of batch.slice(i, i + 500)) {
+        wb.set(recordsRef().doc(r.id), {
+          kind: r.kind,
+          json: JSON.stringify(r.data),
+          deleted: r.deleted,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      await wb.commit();
+    }
+  } catch (e) {
+    flushing = false;
+    setStatus('error', describeError(e));
     scheduleFlush(10000);
     return;
   }
+  flushing = false;
   // Only clear entries that weren't edited again while the request was in flight.
   for (const r of batch) if (store.pending.get(r.id) === r) store.pending.delete(r.id);
   saveCache();
@@ -165,7 +188,7 @@ async function syncNow() {
 function describeError(e) {
   if (!navigator.onLine) return 'Offline — changes are saved on this device and will sync when you reconnect.';
   const msg = e?.message || String(e);
-  if (/fetch|network|Failed/i.test(msg)) return "Can't reach the sync server. If it hasn't been used in a week, restore the project in Supabase.";
+  if (/unavailable|network|offline|Failed to get/i.test(msg)) return "Can't reach the sync server. Changes are saved on this device and will sync once it's reachable.";
   return msg;
 }
 
@@ -518,6 +541,27 @@ function renderAccount() {
   else s = store.lastSync ? `Up to date · last synced ${store.lastSync.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Waiting to sync…';
   if (store.pending.size) s += ` · ${store.pending.size} change${store.pending.size > 1 ? 's' : ''} waiting to upload`;
   $('#account-status').textContent = s;
+  // A Google-only account has no password, which the Mac app needs.
+  const user = auth.currentUser;
+  const hasPassword = !!user?.providerData.some((p) => p.providerId === 'password');
+  $('#mac-password-box').hidden = !user || hasPassword;
+}
+
+function authMessage(err) {
+  switch (err?.code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found': return 'Wrong email or password.';
+    case 'auth/email-already-in-use': return 'That email already has an account. Sign in instead (or use Continue with Google if you made it that way).';
+    case 'auth/weak-password': return 'Password must be at least 6 characters.';
+    case 'auth/invalid-email': return "That doesn't look like an email address.";
+    case 'auth/too-many-requests': return 'Too many attempts. Try again in a few minutes.';
+    case 'auth/requires-recent-login': return 'For security, sign out and back in, then try again.';
+    case 'auth/popup-blocked': return 'The Google sign-in window was blocked. Allow pop-ups for this site, or use email and password.';
+    case 'auth/credential-already-in-use':
+    case 'auth/provider-already-linked': return 'This account already has a password.';
+    default: return err?.message || String(err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -525,9 +569,9 @@ function renderAccount() {
 // ---------------------------------------------------------------------------
 let pollTimer = null;
 
-function enterApp(session) {
-  store.userId = session.user.id;
-  store.email = session.user.email;
+function enterApp(user) {
+  store.userId = user.uid;
+  store.email = user.email;
   loadCache(store.userId);
   $('#auth').hidden = true;
   $('#app').hidden = false;
@@ -555,13 +599,19 @@ function wireEvents() {
     const password = $('#auth-password').value;
     const msg = $('#auth-msg');
     msg.textContent = '';
-    if (authMode === 'signup') {
-      const { data, error } = await sb.auth.signUp({ email, password });
-      if (error) { msg.textContent = error.message; return; }
-      if (!data.session) msg.textContent = 'Check your email to confirm the account, then sign in.';
-    } else {
-      const { error } = await sb.auth.signInWithPassword({ email, password });
-      if (error) msg.textContent = error.message;
+    try {
+      if (authMode === 'signup') await auth.createUserWithEmailAndPassword(email, password);
+      else await auth.signInWithEmailAndPassword(email, password);
+    } catch (err) {
+      msg.textContent = authMessage(err);
+    }
+  });
+  $('#google-signin').addEventListener('click', async () => {
+    $('#auth-msg').textContent = '';
+    try {
+      await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    } catch (err) {
+      if (err.code !== 'auth/popup-closed-by-user') $('#auth-msg').textContent = authMessage(err);
     }
   });
 
@@ -671,7 +721,21 @@ function wireEvents() {
     if (store.pending.size && !confirm('Some changes haven\'t uploaded yet. Sign out anyway and lose them?')) return;
     $('#account-dlg').close();
     try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
-    await sb.auth.signOut();
+    await auth.signOut();
+  });
+  $('#mac-password-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = $('#mac-password').value;
+    const msg = $('#mac-password-msg');
+    try {
+      const cred = firebase.auth.EmailAuthProvider.credential(auth.currentUser.email, pw);
+      await auth.currentUser.linkWithCredential(cred);
+      msg.textContent = `Done. On the Mac, sign in with ${auth.currentUser.email} and this password.`;
+      $('#mac-password').value = '';
+      renderAccount();
+    } catch (err) {
+      msg.textContent = authMessage(err);
+    }
   });
 
   document.addEventListener('visibilitychange', () => {
@@ -708,12 +772,10 @@ async function boot() {
   fillStaticSelects();
   wireEvents();
 
-  sb.auth.onAuthStateChange((event, session) => {
-    if (session && session.user.id !== store.userId) enterApp(session);
-    else if (!session) leaveApp();
+  auth.onAuthStateChanged((user) => {
+    if (user && user.uid !== store.userId) enterApp(user);
+    else if (!user) leaveApp();
   });
-  const { data } = await sb.auth.getSession();
-  if (!data.session) leaveApp();
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }

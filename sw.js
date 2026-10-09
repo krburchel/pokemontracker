@@ -1,13 +1,15 @@
 // App files: network-first so updates show up right away, cached copy when offline.
-// Sprites and the Supabase library: cache-first, since they never change.
-// Sync requests to supabase.co are never cached.
-var CACHE = 'poketracker-v1';
+// Sprites: cache-first, since they never change.
+// Firebase sync and sign-in requests (googleapis.com) are never cached.
+var CACHE = 'poketracker-v2';
 var SPRITES = 'poketracker-sprites-v1';
 var ASSETS = [
   './', './index.html', './style.css', './app.js', './manifest.json',
   './data/species.json', './data/games.json',
   './icon-192.png', './icon-512.png', './apple-touch-icon.png', './favicon-32.png',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js'
+  './vendor/firebase/firebase-app-compat.js',
+  './vendor/firebase/firebase-auth-compat.js',
+  './vendor/firebase/firebase-firestore-compat.js'
 ];
 
 self.addEventListener('install', function (e) {
@@ -26,11 +28,9 @@ self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
   var url = new URL(req.url);
-  if (url.hostname.endsWith('supabase.co')) return;
 
-  if (url.hostname === 'raw.githubusercontent.com' || url.hostname === 'cdn.jsdelivr.net') {
-    var bucket = url.hostname === 'cdn.jsdelivr.net' ? CACHE : SPRITES;
-    e.respondWith(caches.open(bucket).then(function (c) {
+  if (url.hostname === 'raw.githubusercontent.com') {
+    e.respondWith(caches.open(SPRITES).then(function (c) {
       return c.match(req).then(function (hit) {
         return hit || fetch(req).then(function (res) {
           if (res.ok || res.type === 'opaque') c.put(req, res.clone());
