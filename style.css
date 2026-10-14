@@ -68,6 +68,7 @@ select, input[type=search], input[type=email], input[type=password], input[type=
 .auth-card h1 { margin: 8px 0 4px; }
 .auth-card form { display: grid; gap: 10px; margin-top: 16px; }
 .msg { min-height: 1.4em; color: var(--accent); }
+.msg.ok { color: var(--caught); }
 
 /* Shell */
 .app { min-height: 100dvh; padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
@@ -210,5 +211,5 @@ dialog label.check input { width: auto; }
 .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 button.google { width: 100%; border: 1px solid var(--line); font-weight: 600; }
 .mac-pw { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; font-size: 14px; }
-.mac-pw form { display: flex; gap: 8px; }
-.mac-pw input { flex: 1; }
+.mac-pw form { display: grid; gap: 8px; }
+.mac-pw input[readonly] { color: var(--muted); }

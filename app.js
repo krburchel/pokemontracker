@@ -543,8 +543,42 @@ function renderAccount() {
   $('#account-status').textContent = s;
   // A Google-only account has no password, which the Mac app needs.
   const user = auth.currentUser;
-  const hasPassword = !!user?.providerData.some((p) => p.providerId === 'password');
-  $('#mac-password-box').hidden = !user || hasPassword;
+  $('#mac-password-box').hidden = !user;
+  if (!user) return;
+  const hasPassword = user.providerData.some((p) => p.providerId === 'password');
+  $('#mac-password-title').textContent = hasPassword ? 'Change Mac password.' : 'Set Mac password.';
+  $('#mac-password-hint').textContent = hasPassword
+    ? 'The Mac app signs in with this email and password. Set a new one here if you need to.'
+    : 'You signed in with Google; the Mac app signs in with email and password. Add a password to this same account:';
+  $('#mac-username').value = user.email || '';
+}
+
+// Adds a password to a Google-only account, or replaces the existing one.
+// Changing a password needs a recent sign-in; for Google accounts we redo the
+// Google popup and try once more.
+async function saveMacPassword(pw) {
+  const user = auth.currentUser;
+  const hasPassword = user.providerData.some((p) => p.providerId === 'password');
+  const attempt = async () => {
+    if (!hasPassword) {
+      try {
+        await user.linkWithCredential(firebase.auth.EmailAuthProvider.credential(user.email, pw));
+        return;
+      } catch (err) {
+        if (err.code !== 'auth/provider-already-linked' && err.code !== 'auth/credential-already-in-use') throw err;
+      }
+    }
+    await user.updatePassword(pw);
+  };
+  try {
+    await attempt();
+  } catch (err) {
+    const google = user.providerData.some((p) => p.providerId === 'google.com');
+    if (err.code !== 'auth/requires-recent-login' || !google) throw err;
+    await user.reauthenticateWithPopup(new firebase.auth.GoogleAuthProvider());
+    await attempt();
+  }
+  await user.reload();
 }
 
 function authMessage(err) {
@@ -727,15 +761,23 @@ function wireEvents() {
     e.preventDefault();
     const pw = $('#mac-password').value;
     const msg = $('#mac-password-msg');
+    msg.textContent = '';
+    msg.classList.remove('ok');
     try {
-      const cred = firebase.auth.EmailAuthProvider.credential(auth.currentUser.email, pw);
-      await auth.currentUser.linkWithCredential(cred);
-      msg.textContent = `Done. On the Mac, sign in with ${auth.currentUser.email} and this password.`;
-      $('#mac-password').value = '';
-      renderAccount();
+      await saveMacPassword(pw);
+      // Hiding the form after a successful submit is the cue password managers
+      // use to offer saving the email + password pair.
+      $('#mac-password-form').hidden = true;
+      msg.classList.add('ok');
+      msg.textContent = `Saved. On the Mac, sign in with ${auth.currentUser.email} and this password.`;
     } catch (err) {
       msg.textContent = authMessage(err);
     }
+  });
+  $('#sync-btn').addEventListener('click', () => {
+    $('#mac-password-form').hidden = false;
+    $('#mac-password').value = '';
+    $('#mac-password-msg').textContent = '';
   });
 
   document.addEventListener('visibilitychange', () => {

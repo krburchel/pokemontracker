@@ -91,10 +91,11 @@
   <p id="account-email"></p>
   <p id="account-status" class="muted"></p>
   <div id="mac-password-box" class="mac-pw" hidden>
-    <p><b>Set Mac password.</b> You signed in with Google; the Mac app signs in with email and password. Add a password to this same account:</p>
-    <form id="mac-password-form">
-      <input id="mac-password" type="password" placeholder="New password (6+ characters)" minlength="6" autocomplete="new-password" required>
-      <button type="submit" class="primary">Set Password</button>
+    <p><b id="mac-password-title">Mac password.</b> <span id="mac-password-hint"></span></p>
+    <form id="mac-password-form" action="#" method="post">
+      <input id="mac-username" name="username" type="email" autocomplete="username" readonly aria-label="Account email">
+      <input id="mac-password" name="password" type="password" placeholder="New password (6+ characters)" minlength="6" autocomplete="new-password" required>
+      <button type="submit" class="primary">Save Password</button>
     </form>
     <p id="mac-password-msg" class="msg" role="status"></p>
   </div>
