@@ -81,6 +81,8 @@ select, input[type=search], input[type=email], input[type=password], input[type=
   -webkit-backdrop-filter: blur(12px);
 }
 .topbar h1 { font-size: 22px; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.logo { width: 30px; height: 30px; flex: 0 0 auto; filter: drop-shadow(0 1px 2px rgb(0 0 0 / .2)); }
 .sync-btn { background: transparent; padding: 8px; }
 .dot { display: block; width: 12px; height: 12px; border-radius: 50%; background: var(--caught); }
 .dot.busy { background: var(--shiny); }
