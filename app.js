@@ -48,6 +48,11 @@ let GAMES = [];
 let BADGES = {};   // game id -> [{id, name, type, category}] (from the Mac app's GymData)
 const BADGE_CATEGORIES = ['Gym', 'Trial', 'Kahuna', 'Titan', 'Team Star', 'Noble'];
 
+// Official game logos in logos/{game}-{n}.webp (one per version of paired games).
+const GAME_LOGOS = { home: 1, pogo: 1, gsc: 2, rse: 2, frlg: 2, dpp: 2, hgss: 2, bw: 2, b2w2: 2, xy: 2, oras: 2, sumo: 2, usum: 2, letsgo: 2, swsh: 2, bdsp: 2, legendsarceus: 1, sv: 2, legendsza: 1 };
+const gameLogos = (gameId, cls = '') => Array.from({ length: GAME_LOGOS[gameId] || 0 },
+  (_, i) => `<img class="${cls}" src="logos/${gameId}-${i}.webp" alt="" loading="lazy" decoding="async">`).join('');
+
 // Best-odds suggestions for a new hunt (port of MethodRecommender.swift).
 const METHODS_BY_GAME = {
   gsc: ['Full Odds'], rse: ['Full Odds'], frlg: ['Full Odds'],
@@ -341,8 +346,45 @@ function currentGame() {
   return GAMES.find((g) => g.id === prefs.gameId) || GAMES[0];
 }
 
+function renderGameButton() {
+  const game = currentGame();
+  $('#game-btn').innerHTML = `<span class="game-logos">${gameLogos(game.id)}</span>` +
+    `<span class="game-name">${esc(game.name)}</span><span class="caret">▾</span>`;
+  $('#game-btn').setAttribute('aria-label', `Game: ${game.name}. Change game`);
+}
+
+function openGamePicker() {
+  // Progress counts distinct species caught (regular) in each game, any playthrough.
+  const caughtBy = new Map();
+  for (const r of live('catch')) {
+    if (r.data.isShiny) continue;
+    if (!caughtBy.has(r.data.gameId)) caughtBy.set(r.data.gameId, new Set());
+    caughtBy.get(r.data.gameId).add(r.data.speciesId);
+  }
+  const groups = [];
+  for (const g of GAMES) {
+    const label = gameGroup(g);
+    let grp = groups.find((x) => x.label === label);
+    if (!grp) groups.push(grp = { label, games: [] });
+    grp.games.push(g);
+  }
+  $('#game-grid').innerHTML = groups.map((grp) => `<h3 class="game-group">${grp.label}</h3><div class="game-tiles">` +
+    grp.games.map((g) => {
+      const dex = new Set(g.species);
+      const n = [...(caughtBy.get(g.id) || [])].filter((id) => dex.has(id)).length;
+      const pct = g.species.length ? (n / g.species.length) * 100 : 0;
+      return `<button class="game-tile ${g.id === prefs.gameId ? 'on' : ''}" data-game="${g.id}">` +
+        `<span class="tile-logos n${GAME_LOGOS[g.id] || 0}">${gameLogos(g.id)}</span>` +
+        `<span class="tile-name">${esc(g.name)}</span>` +
+        `<span class="tile-progress">${n} / ${g.species.length}</span><span class="bar"><i style="width:${pct.toFixed(1)}%"></i></span></button>`;
+    }).join('') + '</div>').join('');
+  $('#game-dlg').showModal();
+  $('#game-grid .game-tile.on')?.scrollIntoView({ block: 'center' });
+}
+
 function renderDexControls() {
   const game = currentGame();
+  renderGameButton();
 
   const pts = live('playthrough').filter((r) => r.data.gameId === game.id)
     .sort((a, b) => a.data.createdAt.localeCompare(b.data.createdAt));
@@ -854,13 +896,19 @@ function wireEvents() {
     b.addEventListener('click', () => showTab(b.dataset.tab)));
 
   // Dex controls
-  $('#game-select').addEventListener('change', (e) => {
-    prefs.gameId = e.target.value;
+  $('#game-btn').addEventListener('click', openGamePicker);
+  $('#game-grid').addEventListener('click', (e) => {
+    const tile = e.target.closest('[data-game]');
+    if (!tile) return;
+    $('#game-dlg').close();
+    if (tile.dataset.game === prefs.gameId) return;
+    prefs.gameId = tile.dataset.game;
     prefs.playthroughId = '';
     savePrefs();
     renderDex();
     window.scrollTo(0, 0);
   });
+  $('#game-dlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
   $('#pt-select').addEventListener('change', (e) => {
     if (e.target.value === '__new') {
       const name = prompt(`Name for the new ${currentGame().shortName} playthrough (e.g. Nuzlocke):`);
@@ -1049,8 +1097,6 @@ function fillStaticSelects() {
   }
   const options = groups.map((grp) => `<optgroup label="${grp.label}">` +
     grp.games.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('') + '</optgroup>').join('');
-  $('#game-select').innerHTML = options;
-  $('#game-select').value = currentGame().id;
   $('#caught-game').innerHTML = options;
   $('#hunt-method').innerHTML = METHODS.map((m) => `<option>${m}</option>`).join('');
 }

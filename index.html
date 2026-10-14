@@ -48,7 +48,7 @@
     <section id="tab-dex" class="tab">
       <div class="controls">
         <div class="row">
-          <select id="game-select" aria-label="Game"></select>
+          <button id="game-btn" class="game-btn" aria-haspopup="dialog"></button>
           <select id="pt-select" aria-label="Playthrough"></select>
         </div>
         <div id="dex-progress" class="progress-line"></div>
@@ -182,6 +182,14 @@
       <button type="submit" class="primary">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="game-dlg" class="sheet" aria-label="Choose a game">
+  <div class="game-dlg-body">
+    <div class="detail-top"><h2>Choose a game</h2>
+      <button class="ghost close" aria-label="Close" onclick="this.closest('dialog').close()">✕</button></div>
+    <div id="game-grid"></div>
+  </div>
 </dialog>
 
 <dialog id="detail-dlg" class="sheet" aria-label="Pokémon details">

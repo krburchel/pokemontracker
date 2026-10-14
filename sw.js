@@ -1,7 +1,7 @@
 // App files: network-first so updates show up right away, cached copy when offline.
 // Sprites and PokéAPI data: cache-first, since they never change.
 // Firebase sync and sign-in requests (googleapis.com) are never cached.
-var CACHE = 'poketracker-v5';
+var CACHE = 'poketracker-v6';
 var SPRITES = 'poketracker-sprites-v1';
 var POKEAPI = 'poketracker-pokeapi-v1';
 var ASSETS = [
@@ -10,7 +10,41 @@ var ASSETS = [
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon-32.png',
   './vendor/firebase/firebase-app-compat.js',
   './vendor/firebase/firebase-auth-compat.js',
-  './vendor/firebase/firebase-firestore-compat.js'
+  './vendor/firebase/firebase-firestore-compat.js',
+  './logos/b2w2-0.webp',
+  './logos/b2w2-1.webp',
+  './logos/bdsp-0.webp',
+  './logos/bdsp-1.webp',
+  './logos/bw-0.webp',
+  './logos/bw-1.webp',
+  './logos/dpp-0.webp',
+  './logos/dpp-1.webp',
+  './logos/frlg-0.webp',
+  './logos/frlg-1.webp',
+  './logos/gsc-0.webp',
+  './logos/gsc-1.webp',
+  './logos/hgss-0.webp',
+  './logos/hgss-1.webp',
+  './logos/home-0.webp',
+  './logos/legendsarceus-0.webp',
+  './logos/legendsza-0.webp',
+  './logos/letsgo-0.webp',
+  './logos/letsgo-1.webp',
+  './logos/oras-0.webp',
+  './logos/oras-1.webp',
+  './logos/pogo-0.webp',
+  './logos/rse-0.webp',
+  './logos/rse-1.webp',
+  './logos/sumo-0.webp',
+  './logos/sumo-1.webp',
+  './logos/sv-0.webp',
+  './logos/sv-1.webp',
+  './logos/swsh-0.webp',
+  './logos/swsh-1.webp',
+  './logos/usum-0.webp',
+  './logos/usum-1.webp',
+  './logos/xy-0.webp',
+  './logos/xy-1.webp'
 ];
 
 self.addEventListener('install', function (e) {

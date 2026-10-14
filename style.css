@@ -335,4 +335,33 @@ dialog textarea { font: inherit; width: 100%; border: 1px solid var(--line); bor
   .mode-row .seg button { flex: 1; }
   .mode-row input { flex-basis: 100%; }
   .filter-row { display: grid; grid-template-columns: 1fr 1fr; }
+  .game-btn .game-name { display: none; }
+  .game-btn .game-logos { flex: 1; }
 }
+
+/* ---- Game picker ---------------------------------------------------------- */
+.game-btn {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  border: 1px solid var(--line); background: var(--card); padding: 4px 10px; text-align: left;
+}
+.game-btn .game-logos { display: flex; gap: 4px; flex: 0 0 auto; }
+.game-btn .game-logos img { height: 34px; width: auto; max-width: 72px; object-fit: contain; }
+.game-btn .game-name { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.game-btn .caret { color: var(--muted); }
+.game-dlg-body { max-height: 92dvh; overflow-y: auto; padding: 8px 16px 20px; }
+.game-dlg-body .detail-top h2 { margin: 6px 0; font-size: 19px; }
+.game-group { font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+.game-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
+.game-tile {
+  display: grid; justify-items: center; gap: 4px; padding: 10px 8px;
+  background: var(--bg); border: 2px solid transparent; border-radius: 14px;
+}
+.game-tile.on { border-color: var(--accent); background: var(--accent-soft); }
+.tile-logos { display: flex; justify-content: center; align-items: center; gap: 4px; height: 48px; width: 100%; }
+.tile-logos img { max-height: 48px; min-width: 0; max-width: 100%; object-fit: contain; }
+.tile-logos.n2 img { max-width: calc(50% - 2px); }
+.tile-name { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; }
+.tile-progress { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.game-tile .bar { width: 100%; margin-top: 0; }
+
+.row > .game-btn { flex: 2 1 0; }

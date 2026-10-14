@@ -15,5 +15,8 @@ Live at https://krburchel.github.io/pokemontracker/
 - Record payloads (the `json` field) must match `SyncDTO` in the Mac app's `Services/SyncEngine.swift`.
 - `firestore.rules` is the project's full ruleset (the old Z-A checklist app and its
   `pokemon_tracker/{uid}` data were removed 2026-10-14). Deploy with `firebase deploy --only firestore:rules`.
+- `logos/` holds the official English game logos (Nintendo / The Pokémon Company trademarks, personal fan use),
+  from Bulbagarden Archives, plus Gold/Silver from Wikipedia; re-encoded to 112px-tall WebP. One file per
+  version of paired games (`{game}-0.webp`, `{game}-1.webp`); counts are in `GAME_LOGOS` in app.js.
 - `vendor/firebase` is the Firebase JS SDK 12.19.0 compat build (Apache 2.0), bundled for offline use.
 - Bump `CACHE` in `sw.js` when shipping changes so installed copies refresh their offline cache.
