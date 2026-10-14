@@ -49,14 +49,16 @@
           <select id="pt-select" aria-label="Playthrough"></select>
         </div>
         <div id="dex-progress" class="progress-line"></div>
-        <div class="row">
-          <div class="seg" role="group" aria-label="Tap marks">
+        <div id="badge-strip" class="badge-strip" hidden></div>
+        <div class="row mode-row">
+          <div class="seg" role="group" aria-label="What tapping a Pokémon does">
             <button data-mode="regular" class="on">Caught</button>
             <button data-mode="shiny">✨ Shiny</button>
+            <button data-mode="info" title="Tap a Pokémon to see its details">ⓘ Info</button>
           </div>
           <input id="dex-search" type="search" placeholder="Search" aria-label="Search">
         </div>
-        <div class="row">
+        <div class="row filter-row">
           <select id="gen-filter" aria-label="Generation"></select>
           <select id="type-filter" aria-label="Type"></select>
           <select id="status-filter" aria-label="Status">
@@ -64,7 +66,9 @@
             <option value="missing">Missing</option>
             <option value="caught">Caught</option>
           </select>
+          <select id="tag-filter" aria-label="Tag" hidden></select>
         </div>
+        <p class="hint">Tip: long-press (or right-click) any Pokémon for details, notes and tags.</p>
       </div>
       <div id="dex-grid" class="grid"></div>
     </section>
@@ -72,6 +76,10 @@
     <section id="tab-hunts" class="tab" hidden>
       <button id="new-hunt" class="primary wide">＋ New Hunt</button>
       <div id="hunt-list"></div>
+    </section>
+
+    <section id="tab-timeline" class="tab" hidden>
+      <div id="timeline"></div>
     </section>
 
     <section id="tab-stats" class="tab" hidden>
@@ -82,6 +90,7 @@
   <nav class="tabbar">
     <button data-tab="dex" class="on"><span>◉</span>Dex</button>
     <button data-tab="hunts"><span>✨</span>Hunts</button>
+    <button data-tab="timeline"><span>☰</span>Timeline</button>
     <button data-tab="stats"><span>▤</span>Stats</button>
   </nav>
 </div>
@@ -90,7 +99,8 @@
   <h2>Sync</h2>
   <p id="account-email"></p>
   <p id="account-status" class="muted"></p>
-  <div id="mac-password-box" class="mac-pw" hidden>
+  <details id="mac-password-box" class="mac-pw" hidden>
+    <summary>Mac app password</summary>
     <p><b id="mac-password-title">Mac password.</b> <span id="mac-password-hint"></span></p>
     <form id="mac-password-form" action="#" method="post">
       <input id="mac-username" name="username" type="email" autocomplete="username" readonly aria-label="Account email">
@@ -98,7 +108,7 @@
       <button type="submit" class="primary">Save Password</button>
     </form>
     <p id="mac-password-msg" class="msg" role="status"></p>
-  </div>
+  </details>
   <div class="dlg-actions">
     <button id="sync-now">Sync Now</button>
     <button id="sign-out" class="danger">Sign Out</button>
@@ -113,6 +123,7 @@
       <input id="hunt-species" type="search" placeholder="Search Pokémon" autocomplete="off" required>
     </label>
     <div id="hunt-species-results" class="picker"></div>
+    <div id="hunt-recs" class="recs"></div>
     <label>Method
       <select id="hunt-method"></select>
     </label>
@@ -141,6 +152,39 @@
   </form>
 </dialog>
 
+<dialog id="phase-dlg">
+  <form id="phase-form" method="dialog">
+    <h2>Phase ✨</h2>
+    <p id="phase-sub" class="muted"></p>
+    <label>Shiny you found
+      <input id="phase-species" type="search" placeholder="Search Pokémon" autocomplete="off" required>
+    </label>
+    <div id="phase-species-results" class="picker"></div>
+    <label>Notes
+      <input id="phase-notes" placeholder="Optional (e.g. kept it, nature)">
+    </label>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary">Log Phase</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="notes-dlg">
+  <form id="notes-form" method="dialog">
+    <h2>Hunt notes</h2>
+    <textarea id="notes-input" rows="5" placeholder="Location, setup, reset routine…"></textarea>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="detail-dlg" class="sheet" aria-label="Pokémon details">
+  <div id="detail-body"></div>
+</dialog>
+
 <dialog id="count-dlg">
   <form id="count-form" method="dialog">
     <h2>Set encounters</h2>
@@ -155,6 +199,8 @@
 <script src="vendor/firebase/firebase-app-compat.js"></script>
 <script src="vendor/firebase/firebase-auth-compat.js"></script>
 <script src="vendor/firebase/firebase-firestore-compat.js"></script>
+<script src="detail.js"></script>
+<script src="timeline.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

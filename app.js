@@ -45,6 +45,42 @@ function writeJSON(key, value) {
 let SPECIES = [];
 let SPECIES_BY_ID = new Map();
 let GAMES = [];
+let BADGES = {};   // game id -> [{id, name, type, category}] (from the Mac app's GymData)
+const BADGE_CATEGORIES = ['Gym', 'Trial', 'Kahuna', 'Titan', 'Team Star', 'Noble'];
+
+// Best-odds suggestions for a new hunt (port of MethodRecommender.swift).
+const METHODS_BY_GAME = {
+  gsc: ['Full Odds'], rse: ['Full Odds'], frlg: ['Full Odds'],
+  dpp: ['Full Odds', 'Masuda Method'], hgss: ['Full Odds', 'Masuda Method'],
+  bw: ['Full Odds', 'Masuda Method'], b2w2: ['Full Odds', 'Masuda Method'],
+  xy: ['Full Odds', 'Masuda Method', 'Chain Fishing'], oras: ['Full Odds', 'Masuda Method', 'Chain Fishing'],
+  sumo: ['Full Odds', 'Masuda Method', 'SOS Chain'], usum: ['Full Odds', 'Masuda Method', 'SOS Chain'],
+  letsgo: ['Full Odds'], swsh: ['Full Odds', 'Masuda Method', 'Mass Outbreak', 'Dynamax Adventure'],
+  bdsp: ['Full Odds', 'Masuda Method'], legendsarceus: ['Full Odds', 'Mass Outbreak'],
+  sv: ['Full Odds', 'Masuda Method', 'Mass Outbreak', 'Sparkling Power Sandwich'], legendsza: ['Full Odds'],
+};
+const CHARM_GAMES = new Set(['b2w2', 'xy', 'oras', 'sumo', 'usum', 'letsgo', 'swsh', 'bdsp', 'legendsarceus', 'sv', 'legendsza']);
+const BEST_MODIFIERS = {
+  'Sparkling Power Sandwich': { sandwichLevel: 3, label: 'Sparkling Power Lv. 3' },
+  'SOS Chain': { chainCount: 31, label: 'Chain ≥ 31' },
+  'Mass Outbreak': { chainCount: 60, label: '60 KOs' },
+  'Chain Fishing': { chainCount: 20, label: 'Chain ≥ 20' },
+};
+
+function recommendMethods(speciesId, limit = 5) {
+  const out = [];
+  for (const g of GAMES) {
+    if (!g.species.includes(speciesId)) continue;
+    for (const method of METHODS_BY_GAME[g.id] || []) {
+      const mods = BEST_MODIFIERS[method] || {};
+      const charm = CHARM_GAMES.has(g.id);
+      const odds = huntOdds({ method, shinyCharm: charm, sandwichLevel: mods.sandwichLevel || 0, chainCount: mods.chainCount || 0 });
+      const parts = [charm && 'Shiny Charm', mods.label].filter(Boolean);
+      out.push({ game: g, method, charm, mods, odds, summary: [method, ...parts].join(' · ') });
+    }
+  }
+  return out.sort((a, b) => b.odds.rolls - a.odds.rolls || a.summary.localeCompare(b.summary)).slice(0, limit);
+}
 
 const spriteURL = (id, shiny) =>
   `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shiny ? 'shiny/' : ''}${id}.png`;
@@ -262,7 +298,7 @@ function huntOdds(h) {
   if (h.shinyCharm) rolls += 2;
   const p = rolls / 4096;
   const cumulative = 1 - Math.pow(1 - p, Math.max(0, h.encounters || 0));
-  return { oneIn: Math.round(1 / p), cumulative };
+  return { rolls, oneIn: Math.round(1 / p), cumulative };
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +306,8 @@ function huntOdds(h) {
 // ---------------------------------------------------------------------------
 const prefs = Object.assign({
   tab: 'dex', gameId: 'home', playthroughId: '', mode: 'regular',
-  gen: 'all', type: 'all', status: 'all', lastCaughtGame: 'sv',
+  gen: 'all', type: 'all', status: 'all', tag: 'all', lastCaughtGame: 'sv',
+  reviewYear: null, badgesOpen: true,
 }, readJSON(PREFS_KEY) || {});
 const savePrefs = () => writeJSON(PREFS_KEY, prefs);
 let search = '';
@@ -279,15 +316,20 @@ function render() {
   if (!store.userId) return;
   if (prefs.tab === 'dex') renderDex();
   else if (prefs.tab === 'hunts') renderHunts();
+  else if (prefs.tab === 'timeline') renderTimeline();
   else renderStats();
+  refreshDetailIfOpen();
 }
 
 // ---- Tabs -----------------------------------------------------------------
-const TITLES = { dex: 'Living Dex', hunts: 'Shiny Hunts', stats: 'Stats' };
+const TITLES = { dex: 'Living Dex', hunts: 'Shiny Hunts', timeline: 'Timeline', stats: 'Stats' };
+const TABS = Object.keys(TITLES);
 function showTab(tab) {
   prefs.tab = tab;
   savePrefs();
-  for (const t of ['dex', 'hunts', 'stats']) $(`#tab-${t}`).hidden = t !== tab;
+  if (!TABS.includes(tab)) tab = prefs.tab = 'dex';
+  if (tab === 'timeline') timelineShown = TIMELINE_PAGE;
+  for (const t of TABS) $(`#tab-${t}`).hidden = t !== tab;
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#title').textContent = TITLES[tab];
   render();
@@ -323,10 +365,52 @@ function renderDexControls() {
   $('#type-filter').value = prefs.type;
   $('#status-filter').value = prefs.status;
   document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === prefs.mode));
+
+  // Tag filter: only shown when records in this game + playthrough carry tags.
+  const pt = prefs.playthroughId || '';
+  const tags = [...new Set(live('catch')
+    .filter((r) => r.data.gameId === game.id && (r.data.playthroughId || '') === pt)
+    .flatMap((r) => tagsOf(r.data.tagsRaw)))].sort();
+  if (prefs.tag !== 'all' && !tags.includes(prefs.tag)) prefs.tag = 'all';
+  $('#tag-filter').hidden = !tags.length;
+  $('#tag-filter').innerHTML = '<option value="all">Any tag</option>' +
+    tags.map((t) => `<option value="${esc(t)}">#${esc(t)}</option>`).join('');
+  $('#tag-filter').value = prefs.tag;
+}
+
+// Gym badges / trials / titans for the selected game + playthrough.
+function renderBadges() {
+  const game = currentGame();
+  const list = BADGES[game.id] || [];
+  const el = $('#badge-strip');
+  el.hidden = !list.length;
+  if (!list.length) return;
+  const pt = prefs.playthroughId || '';
+  const earned = new Set(live('badge').filter((r) => r.data.gameId === game.id && (r.data.playthroughId || '') === pt)
+    .map((r) => r.data.badgeId));
+  const count = list.filter((b) => earned.has(b.id)).length;
+  const groups = BADGE_CATEGORIES.map((cat) => [cat, list.filter((b) => (b.category || 'Gym') === cat)]).filter(([, l]) => l.length);
+  el.innerHTML = `<details ${prefs.badgesOpen ? 'open' : ''}><summary>Badges <span class="muted">${count} / ${list.length}</span></summary>` +
+    groups.map(([cat, l]) => `<div class="badge-group">${groups.length > 1 ? `<span class="badge-cat">${cat}</span>` : ''}` +
+      l.map((b) => {
+        const on = earned.has(b.id);
+        return `<button class="gym ${on ? 'on' : ''}" data-badge="${esc(b.id)}" aria-pressed="${on}"` +
+          `${on ? ` style="background:${TYPE_COLORS[b.type] || '#888'}"` : ''} title="${esc(b.name)} (${b.type})">${esc(b.name)}</button>`;
+      }).join('') + '</div>').join('') + '</details>';
+}
+
+function toggleBadge(badgeId) {
+  const game = currentGame();
+  const pt = prefs.playthroughId || null;
+  const matches = live('badge').filter((r) => r.data.gameId === game.id && (r.data.playthroughId || null) === pt && r.data.badgeId === badgeId);
+  if (matches.length) for (const r of matches) write('badge', r.id, r.data, true);
+  else write('badge', uuid(), { gameId: game.id, playthroughId: pt, badgeId, earnedAt: nowISO() });
+  renderBadges();
 }
 
 function renderDex() {
   renderDexControls();
+  renderBadges();
   const game = currentGame();
   const pt = prefs.playthroughId || '';
   const index = catchIndex();
@@ -342,9 +426,20 @@ function renderDex() {
 
   const q = search.trim().toLowerCase();
   const target = prefs.mode === 'shiny';
+  // Notes/tags per species for this game + playthrough.
+  const recs = new Map();
+  for (const r of live('catch')) {
+    const d = r.data;
+    if (d.gameId !== game.id || (d.playthroughId || '') !== pt) continue;
+    const cur = recs.get(d.speciesId) || { notes: false, tags: [] };
+    cur.notes = cur.notes || !!(d.notes || '').trim();
+    cur.tags.push(...tagsOf(d.tagsRaw));
+    recs.set(d.speciesId, cur);
+  }
   const list = dexSpecies.filter((s) => {
     if (prefs.gen !== 'all' && s.generation !== Number(prefs.gen)) return false;
     if (prefs.type !== 'all' && !s.types.includes(prefs.type)) return false;
+    if (prefs.tag !== 'all' && !recs.get(s.id)?.tags.includes(prefs.tag)) return false;
     if (prefs.status !== 'all') {
       const owned = has(s.id, target);
       if (prefs.status === 'caught' ? !owned : owned) return false;
@@ -359,15 +454,37 @@ function renderDex() {
     const cls = ['cell', caught && 'caught', shiny && 'shiny'].filter(Boolean).join(' ');
     return `<button class="${cls}" data-id="${s.id}" aria-pressed="${target ? shiny : caught}">` +
       `${shiny ? '<span class="badge">✨</span>' : ''}` +
-      `<img loading="lazy" alt="" src="${spriteURL(s.id, shiny)}">` +
+      `${recs.get(s.id)?.notes ? '<span class="note-dot" title="Has notes">📝</span>' : ''}` +
+      `<img loading="lazy" alt="" draggable="false" src="${spriteURL(s.id, shiny)}">` +
       `<span class="num">${dexNum(s)}</span><span class="name">${esc(s.name)}</span></button>`;
   }).join('') : '<p class="empty">Nothing matches these filters.</p>';
 }
 
+// Long-press (touch) or right-click (mouse) on a cell opens its detail sheet.
+let pressTimer = null;
+let pressStart = null;
+let suppressClick = false;
+function onDexPointerDown(e) {
+  const cell = e.target.closest('.cell');
+  if (!cell || e.button > 0) return;
+  pressStart = { x: e.clientX, y: e.clientY };
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    suppressClick = true;
+    openDetail(Number(cell.dataset.id));
+  }, 450);
+}
+function onDexPointerMove(e) {
+  if (pressStart && Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y) > 10) cancelPress();
+}
+function cancelPress() { clearTimeout(pressTimer); pressStart = null; }
+
 function onDexTap(e) {
   const cell = e.target.closest('.cell');
   if (!cell) return;
+  if (suppressClick) { suppressClick = false; return; }
   const id = Number(cell.dataset.id);
+  if (prefs.mode === 'info') { openDetail(id); return; }
   const added = toggleCatch(id, currentGame().id, prefs.mode === 'shiny', prefs.playthroughId || null, catchIndex());
   renderDex();
   if (added) {
@@ -389,7 +506,10 @@ function renderHunts() {
   const card = (h) => {
     const d = h.data;
     const odds = huntOdds(d);
-    const nPhases = phases.filter((p) => p.data.huntId === h.id).length;
+    const myPhases = phases.filter((p) => p.data.huntId === h.id)
+      .sort((a, b) => b.data.endedAt.localeCompare(a.data.endedAt));
+    const nPhases = myPhases.length;
+    const sincePhase = nPhases ? (d.encounters || 0) - Math.max(...myPhases.map((p) => p.data.encountersAtPhase || 0)) : null;
     return `<article class="hunt" data-id="${esc(h.id)}">
       <div class="hunt-head">
         <img alt="" src="${spriteURL(d.speciesId, true)}">
@@ -405,14 +525,27 @@ function renderHunts() {
       </div>
       <button class="plus" data-act="plus">+1</button>
       ${modifierRow(d)}
-      <div class="odds">1/${odds.oneIn.toLocaleString()} odds · ${(odds.cumulative * 100).toFixed(1)}% chance of a shiny by now</div>
+      <div class="odds">1/${odds.oneIn.toLocaleString()} odds · ${(odds.cumulative * 100).toFixed(1)}% chance of a shiny by now` +
+      `${sincePhase != null ? ` · ${sincePhase.toLocaleString()} since last phase` : ''}</div>
+      ${d.notes ? `<p class="hunt-notes">${esc(d.notes)}</p>` : ''}
       <div class="hunt-actions">
         <button class="caught-btn" data-act="caught">✨ Caught it!</button>
-        <button data-act="charm">${d.shinyCharm ? 'Remove' : 'Add'} Charm</button>
+        <button data-act="phase">Phase</button>
+        <button data-act="notes">Notes</button>
+        <button data-act="charm">${d.shinyCharm ? '− Charm' : '+ Charm'}</button>
         <button data-act="abandon">Abandon</button>
       </div>
+      ${nPhases ? `<details class="phases"><summary>Phases (${nPhases})</summary>${myPhases.map(phaseRow).join('')}</details>` : ''}
     </article>`;
   };
+
+  const phaseRow = (p) => `<div class="phase" data-phase="${esc(p.id)}">
+      <img alt="" loading="lazy" src="${spriteURL(p.data.speciesId, true)}">
+      <div class="meta"><b>${esc(speciesName(p.data.speciesId))}</b>
+        <small>at encounter ${(p.data.encountersAtPhase || 0).toLocaleString()} · ${new Date(p.data.endedAt).toLocaleDateString()}</small>
+        ${p.data.notes ? `<small>${esc(p.data.notes)}</small>` : ''}</div>
+      <button class="ghost" data-act="del-phase" aria-label="Delete phase">✕</button>
+    </div>`;
 
   // Same method-specific modifiers the Mac's HuntDetailView exposes.
   const modifierRow = (d) => {
@@ -440,11 +573,13 @@ function renderHunts() {
 
 let countHuntId = null;
 let caughtHuntId = null;
+let phaseHuntId = null;
+let notesHuntId = null;
 
 function onHuntTap(e) {
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
-  const id = btn.closest('[data-id]').dataset.id;
+  const id = btn.closest('article[data-id], .mini[data-id]').dataset.id;
   const row = store.rows.get(id);
   if (!row) return;
   const d = { ...row.data };
@@ -470,6 +605,27 @@ function onHuntTap(e) {
       $('#count-dlg').showModal();
       $('#count-input').select();
       return;
+    case 'phase':
+      phaseHuntId = id;
+      phasePicker.reset();
+      $('#phase-notes').value = '';
+      $('#phase-sub').textContent = `Log a non-target shiny found during your ${speciesName(d.speciesId)} hunt. It's recorded at encounter ${(d.encounters || 0).toLocaleString()}; the count keeps running.`;
+      $('#phase-dlg').showModal();
+      return;
+    case 'del-phase': {
+      const pid = btn.closest('[data-phase]').dataset.phase;
+      const prow = store.rows.get(pid);
+      if (prow && confirm(`Delete the ${speciesName(prow.data.speciesId)} phase?`)) {
+        write('phase', pid, prow.data, true);
+        renderHunts();
+      }
+      return;
+    }
+    case 'notes':
+      notesHuntId = id;
+      $('#notes-input').value = d.notes || '';
+      $('#notes-dlg').showModal();
+      return;
     case 'caught':
       caughtHuntId = id;
       $('#caught-name').textContent = `${speciesName(d.speciesId)} after ${(d.encounters || 0).toLocaleString()} encounters`;
@@ -481,18 +637,62 @@ function onHuntTap(e) {
   renderHunts();
 }
 
-// New hunt dialog
-let pickedSpecies = null;
-function renderSpeciesPicker() {
-  const q = $('#hunt-species').value.trim().toLowerCase();
-  if (!q || (pickedSpecies && SPECIES_BY_ID.get(pickedSpecies)?.name.toLowerCase() === q)) {
-    $('#hunt-species-results').innerHTML = '';
-    return;
-  }
-  const matches = SPECIES.filter((s) => s.name.toLowerCase().includes(q)).slice(0, 20);
-  $('#hunt-species-results').innerHTML = matches.map((s) =>
-    `<button type="button" data-id="${s.id}" class="${s.id === pickedSpecies ? 'on' : ''}">` +
-    `<img alt="" loading="lazy" src="${spriteURL(s.id, true)}">${esc(s.name)} <span class="muted">${dexNum(s)}</span></button>`).join('');
+// Species search box + result list, used by the New Hunt and Phase dialogs.
+function makeSpeciesPicker(input, results, onPick = () => {}) {
+  const picker = {
+    picked: null,
+    reset() { picker.picked = null; input.value = ''; results.innerHTML = ''; onPick(null); },
+    render() {
+      const q = input.value.trim().toLowerCase();
+      if (!q || (picker.picked && speciesName(picker.picked).toLowerCase() === q)) { results.innerHTML = ''; return; }
+      const matches = SPECIES.filter((s) => s.name.toLowerCase().includes(q) || String(s.id) === q).slice(0, 20);
+      results.innerHTML = matches.map((s) =>
+        `<button type="button" data-id="${s.id}" class="${s.id === picker.picked ? 'on' : ''}">` +
+        `<img alt="" loading="lazy" src="${spriteURL(s.id, true)}">${esc(s.name)} <span class="muted">${dexNum(s)}</span></button>`).join('')
+        || '<p class="muted">No Pokémon by that name.</p>';
+    },
+    // Accept an exact typed name even if no result was tapped.
+    resolve() {
+      if (picker.picked) return picker.picked;
+      const exact = SPECIES.find((s) => s.name.toLowerCase() === input.value.trim().toLowerCase());
+      return exact ? exact.id : null;
+    },
+  };
+  input.addEventListener('input', () => { picker.picked = null; onPick(null); picker.render(); });
+  results.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-id]');
+    if (!b) return;
+    picker.picked = Number(b.dataset.id);
+    input.value = speciesName(picker.picked);
+    picker.render();
+    onPick(picker.picked);
+  });
+  return picker;
+}
+
+let huntPicker = null;
+let phasePicker = null;
+let huntMods = {};   // sandwich/chain values from a tapped recommendation
+
+function renderRecommendations(speciesId) {
+  const el = $('#hunt-recs');
+  huntMods = {};
+  if (!speciesId) { el.innerHTML = ''; return; }
+  const recs = recommendMethods(speciesId);
+  el.innerHTML = recs.length
+    ? `<p class="muted">Best odds for ${esc(speciesName(speciesId))} — tap one to use it:</p>` + recs.map((r, i) =>
+      `<button type="button" class="rec" data-rec="${i}"><b>${esc(r.game.shortName)}</b>` +
+      `<span>${esc(r.summary)}</span><em>1/${r.odds.oneIn.toLocaleString()}</em></button>`).join('')
+    : `<p class="muted">${esc(speciesName(speciesId))} can't be shiny hunted in the tracked mainline games.</p>`;
+  el.onclick = (e) => {
+    const b = e.target.closest('[data-rec]');
+    if (!b) return;
+    const r = recs[Number(b.dataset.rec)];
+    $('#hunt-method').value = r.method;
+    $('#hunt-charm').checked = r.charm;
+    huntMods = { sandwichLevel: r.mods.sandwichLevel || 0, chainCount: r.mods.chainCount || 0 };
+    el.querySelectorAll('.rec').forEach((x) => x.classList.toggle('on', x === b));
+  };
 }
 
 // ---- Stats ----------------------------------------------------------------
@@ -680,37 +880,70 @@ function wireEvents() {
     savePrefs();
     renderDex();
   }));
-  for (const [sel, key] of [['#gen-filter', 'gen'], ['#type-filter', 'type'], ['#status-filter', 'status']]) {
+  for (const [sel, key] of [['#gen-filter', 'gen'], ['#type-filter', 'type'], ['#status-filter', 'status'], ['#tag-filter', 'tag']]) {
     $(sel).addEventListener('change', (e) => { prefs[key] = e.target.value; savePrefs(); renderDex(); });
   }
   $('#dex-search').addEventListener('input', (e) => { search = e.target.value; renderDex(); });
-  $('#dex-grid').addEventListener('click', onDexTap);
+  const grid = $('#dex-grid');
+  grid.addEventListener('click', onDexTap);
+  grid.addEventListener('pointerdown', onDexPointerDown);
+  grid.addEventListener('pointermove', onDexPointerMove);
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) grid.addEventListener(ev, cancelPress);
+  grid.addEventListener('contextmenu', (e) => {
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    e.preventDefault();
+    cancelPress();
+    // A long-press may already have opened it.
+    if (!$('#detail-dlg').open) openDetail(Number(cell.dataset.id));
+  });
+  $('#badge-strip').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-badge]');
+    if (b) toggleBadge(b.dataset.badge);
+  });
+  $('#badge-strip').addEventListener('toggle', (e) => {
+    prefs.badgesOpen = e.target.open;
+    savePrefs();
+  }, true);
+
+  // Detail sheet
+  $('#detail-body').addEventListener('click', onDetailClick);
+  $('#detail-body').addEventListener('change', onDetailChange);
+  $('#detail-dlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+
+  // Timeline
+  $('#timeline').addEventListener('change', (e) => {
+    if (e.target.id !== 'review-year') return;
+    prefs.reviewYear = Number(e.target.value);
+    savePrefs();
+    renderTimeline();
+  });
+  $('#timeline').addEventListener('click', (e) => {
+    if (e.target.id !== 'timeline-more') return;
+    timelineShown += TIMELINE_PAGE;
+    renderTimeline();
+  });
 
   // Hunts
   $('#hunt-list').addEventListener('click', onHuntTap);
+  huntPicker = makeSpeciesPicker($('#hunt-species'), $('#hunt-species-results'), renderRecommendations);
+  phasePicker = makeSpeciesPicker($('#phase-species'), $('#phase-species-results'));
   $('#new-hunt').addEventListener('click', () => {
-    pickedSpecies = null;
     $('#hunt-form').reset();
-    $('#hunt-species-results').innerHTML = '';
+    huntPicker.reset();
     $('#hunt-dlg').showModal();
     $('#hunt-species').focus();
   });
-  $('#hunt-species').addEventListener('input', () => { pickedSpecies = null; renderSpeciesPicker(); });
-  $('#hunt-species-results').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (!b) return;
-    pickedSpecies = Number(b.dataset.id);
-    $('#hunt-species').value = speciesName(pickedSpecies);
-    renderSpeciesPicker();
+  // Changing method or charm by hand drops a tapped recommendation's modifiers.
+  $('#hunt-method').addEventListener('change', () => {
+    huntMods = {};
+    $('#hunt-recs').querySelectorAll('.rec').forEach((x) => x.classList.remove('on'));
   });
   $('#hunt-form').addEventListener('submit', (e) => {
-    if (!pickedSpecies) {
-      const exact = SPECIES.find((s) => s.name.toLowerCase() === $('#hunt-species').value.trim().toLowerCase());
-      if (!exact) { e.preventDefault(); $('#hunt-species').focus(); return; }
-      pickedSpecies = exact.id;
-    }
+    const speciesId = huntPicker.resolve();
+    if (!speciesId) { e.preventDefault(); $('#hunt-species').focus(); return; }
     write('hunt', uuid(), {
-      speciesId: pickedSpecies,
+      speciesId,
       method: $('#hunt-method').value,
       encounters: Math.max(0, parseInt($('#hunt-start').value, 10) || 0),
       startedAt: nowISO(),
@@ -718,10 +951,29 @@ function wireEvents() {
       abandonedAt: null,
       notes: '',
       shinyCharm: $('#hunt-charm').checked,
-      sandwichLevel: 0,
-      chainCount: 0,
+      sandwichLevel: huntMods.sandwichLevel || 0,
+      chainCount: huntMods.chainCount || 0,
       maxMilestoneNotified: 0,
     });
+    renderHunts();
+  });
+  $('#phase-form').addEventListener('submit', (e) => {
+    const speciesId = phasePicker.resolve();
+    const hunt = store.rows.get(phaseHuntId);
+    if (!speciesId || !hunt) { e.preventDefault(); $('#phase-species').focus(); return; }
+    write('phase', uuid(), {
+      huntId: hunt.id,
+      speciesId,
+      encountersAtPhase: hunt.data.encounters || 0,
+      endedAt: nowISO(),
+      notes: $('#phase-notes').value.trim(),
+    });
+    renderHunts();
+  });
+  $('#notes-form').addEventListener('submit', () => {
+    const row = store.rows.get(notesHuntId);
+    if (!row) return;
+    write('hunt', row.id, { ...row.data, notes: $('#notes-input').value.trim() });
     renderHunts();
   });
   $('#count-form').addEventListener('submit', () => {
@@ -804,10 +1056,12 @@ function fillStaticSelects() {
 }
 
 async function boot() {
-  const [species, games] = await Promise.all([
+  const [species, games, badges] = await Promise.all([
     fetch('data/species.json').then((r) => r.json()),
     fetch('data/games.json').then((r) => r.json()),
+    fetch('data/badges.json').then((r) => r.json()),
   ]);
+  BADGES = badges;
   SPECIES = species;
   SPECIES_BY_ID = new Map(species.map((s) => [s.id, s]));
   GAMES = games;
