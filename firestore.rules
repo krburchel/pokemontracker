@@ -1,11 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Older Legends Z-A checklist app (May 2026). Left as it was.
-    match /pokemon_tracker/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-
     // Synced records for the Mac app + this web app. Each device keeps its own copy and
     // exchanges rows by updatedAt, which must be the server's clock. Deletes are
     // tombstones (deleted: true), so documents are never removed.

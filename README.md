@@ -8,7 +8,7 @@ Live at https://krburchel.github.io/pokemontracker/
 
 - `data/species.json`, `data/games.json` are copied from the Mac app's Resources; re-copy when those change.
 - Record payloads (the `json` field) must match `SyncDTO` in the Mac app's `Services/SyncEngine.swift`.
-- `firestore.rules` is the project's full ruleset (it also keeps the older `pokemon_tracker/{uid}`
-  Z-A checklist rule). Deploy with `firebase deploy --only firestore:rules`.
+- `firestore.rules` is the project's full ruleset (the old Z-A checklist app and its
+  `pokemon_tracker/{uid}` data were removed 2026-10-14). Deploy with `firebase deploy --only firestore:rules`.
 - `vendor/firebase` is the Firebase JS SDK 12.19.0 compat build (Apache 2.0), bundled for offline use.
 - Bump `CACHE` in `sw.js` when shipping changes so installed copies refresh their offline cache.
