@@ -1,4 +1,15 @@
+/* Display font (headings, names, big numbers); body text stays the system font. */
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-weight: 300 900;
+  font-display: swap;
+  src: url(fonts/rubik-latin.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
+  --display: Rubik, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --bg: #f4f4f6;
   --card: #ffffff;
   --text: #1c1c1e;
@@ -36,6 +47,8 @@ body {
 }
 [hidden] { display: none !important; }
 h1, h2 { margin: 0; }
+h1, h2, .hunt-head h3, .game-row .line span:first-child, .game-btn .game-name { font-family: var(--display); font-weight: 600; }
+.counter .count, .plus, .tile b { font-family: var(--display); font-weight: 700; }
 .muted { color: var(--muted); }
 
 button, select, input {
