@@ -342,10 +342,17 @@ function setStatus(status, error = '') {
 }
 
 function write(kind, id, data, deleted = false) {
-  const row = { id, kind, data, deleted };
-  const prev = store.rows.get(id);
-  store.rows.set(id, { ...row, updated_at: prev?.updated_at ?? '' });
-  store.pending.set(id, row);
+  writeMany([{ kind, id, data, deleted }]);
+}
+
+// Several writes with one cache save (a restore can be thousands of rows).
+function writeMany(list) {
+  for (const { kind, id, data, deleted = false } of list) {
+    const row = { id, kind, data, deleted };
+    const prev = store.rows.get(id);
+    store.rows.set(id, { ...row, updated_at: prev?.updated_at ?? '' });
+    store.pending.set(id, row);
+  }
   saveCache();
   scheduleFlush();
 }
@@ -431,7 +438,7 @@ function huntOdds(h) {
 const prefs = Object.assign({
   tab: 'dex', gameId: 'home', playthroughId: '', mode: 'regular',
   gen: 'all', type: 'all', status: 'all', tag: 'all', excl: 'all', lastCaughtGame: 'sv', versionByGame: {},
-  reviewYear: null, badgesExpanded: false, spriteStyle: 'home', hintSeen: false,
+  reviewYear: null, badgesExpanded: false, spriteStyle: 'home', hintSeen: false, lastBackupAt: null,
 }, readJSON(PREFS_KEY) || {});
 const savePrefs = () => writeJSON(PREFS_KEY, prefs);
 let search = '';
@@ -953,6 +960,110 @@ function renderStats() {
 }
 
 // ---- Account --------------------------------------------------------------
+// ---- Backup ---------------------------------------------------------------
+// A backup is every live record as JSON: {app, format, exportedAt, records:[{id, kind, data}]}.
+// Restoring merges: records from the file are added back or reset to the
+// backup's version; anything created since the backup is left alone.
+const BACKUP_FORMAT = 1;
+const BACKUP_CHECKS = {
+  catch: (d) => Number.isInteger(d.speciesId) && typeof d.gameId === 'string',
+  hunt: (d) => Number.isInteger(d.speciesId) && typeof d.startedAt === 'string',
+  phase: (d) => typeof d.huntId === 'string' && Number.isInteger(d.speciesId),
+  playthrough: (d) => typeof d.name === 'string' && typeof d.gameId === 'string',
+  badge: (d) => typeof d.gameId === 'string' && typeof d.badgeId === 'string',
+};
+const BACKUP_LABELS = [['catch', 'catch', 'catches'], ['hunt', 'hunt', 'hunts'], ['phase', 'phase', 'phases'],
+  ['playthrough', 'playthrough', 'playthroughs'], ['badge', 'badge', 'badges']];
+
+function describeRecords(records) {
+  const parts = BACKUP_LABELS.map(([kind, one, many]) => {
+    const n = records.filter((r) => r.kind === kind).length;
+    return n ? `${n.toLocaleString()} ${n === 1 ? one : many}` : '';
+  }).filter(Boolean);
+  return parts.length ? parts.join(', ') : 'nothing yet';
+}
+
+function renderBackup() {
+  const last = prefs.lastBackupAt ? new Date(prefs.lastBackupAt) : null;
+  const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
+  $('#backup-status').textContent = !last ? 'No backup downloaded on this device yet'
+    : `Last downloaded ${days === 0 ? 'today' : days === 1 ? 'yesterday' : last.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` +
+      (days >= 30 ? ' · time for a fresh one' : '');
+}
+
+function backupMessage(text, ok = true) {
+  const msg = $('#backup-msg');
+  msg.textContent = text;
+  msg.classList.toggle('ok', ok);
+}
+
+async function exportBackup() {
+  const records = [...store.rows.values()].filter((r) => !r.deleted && BACKUP_CHECKS[r.kind])
+    .map(({ id, kind, data }) => ({ id, kind, data }));
+  const now = new Date();
+  const json = JSON.stringify({ app: 'PokéTracker', format: BACKUP_FORMAT, exportedAt: now.toISOString(), records }, null, 1);
+  const name = `poketracker-backup-${localDate(now.toISOString())}.json`;
+  const file = new File([json], name, { type: 'application/json' });
+  // Phones: the share sheet (Save to Files / Drive). Computers: a normal download.
+  if (matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: name });
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      throw e;
+    }
+  } else {
+    const url = URL.createObjectURL(file);
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+  prefs.lastBackupAt = now.toISOString();
+  savePrefs();
+  renderBackup();
+  backupMessage(`Saved ${name} (${describeRecords(records)}).`);
+}
+
+async function importBackup(file) {
+  let parsed;
+  try { parsed = JSON.parse(await file.text()); } catch { parsed = null; }
+  if (!parsed || !Array.isArray(parsed.records) || parsed.format !== BACKUP_FORMAT) {
+    throw new Error("That file isn't a PokéTracker backup.");
+  }
+  const okId = (id) => typeof id === 'string' && /^[^/]{1,200}$/.test(id) && !/^\.\.?$|^__.*__$/.test(id);
+  const records = parsed.records.filter((r) => r && okId(r.id) && BACKUP_CHECKS[r.kind]
+    && r.data && typeof r.data === 'object' && !Array.isArray(r.data) && BACKUP_CHECKS[r.kind](r.data));
+  const skipped = parsed.records.length - records.length;
+  const restore = [];
+  let same = 0;
+  for (const r of records) {
+    const cur = store.rows.get(r.id);
+    if (cur && cur.kind !== r.kind) continue;
+    if (cur && !cur.deleted && JSON.stringify(cur.data) === JSON.stringify(r.data)) { same++; continue; }
+    restore.push({ ...r, isNew: !cur || cur.deleted });
+  }
+  const when = new Date(parsed.exportedAt);
+  const from = Number.isNaN(when.getTime()) ? 'this backup' : `the ${when.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} backup`;
+  if (!restore.length) {
+    backupMessage(`Everything in ${from} is already here (${describeRecords(records)}).`);
+    return;
+  }
+  const added = restore.filter((r) => r.isNew);
+  const changed = restore.filter((r) => !r.isNew);
+  const lines = [
+    added.length ? `• Add back ${describeRecords(added)}` : '',
+    changed.length ? `• Reset ${describeRecords(changed)} to the backup's version` : '',
+    same ? `• ${same.toLocaleString()} already match` : '',
+    skipped ? `• ${skipped.toLocaleString()} unreadable entr${skipped === 1 ? 'y' : 'ies'} will be skipped` : '',
+  ].filter(Boolean).join('\n');
+  if (!confirm(`Restore from ${from}?\n\n${lines}\n\nAnything added since the backup stays.`)) return;
+  writeMany(restore.map(({ id, kind, data }) => ({ id, kind, data })));
+  render();
+  backupMessage(`Restored ${describeRecords(restore)}. Uploading to your account…`);
+}
+
 function renderAccount() {
   $('#account-email').textContent = `Signed in as ${store.email || ''}`;
   let s;
@@ -961,6 +1072,7 @@ function renderAccount() {
   else s = store.lastSync ? `Up to date · last synced ${store.lastSync.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Waiting to sync…';
   if (store.pending.size) s += ` · ${store.pending.size} change${store.pending.size > 1 ? 's' : ''} waiting to upload`;
   $('#account-status').textContent = s;
+  renderBackup();
   // A Google-only account has no password, which the Mac app needs.
   const user = auth.currentUser;
   $('#mac-password-box').hidden = !user;
@@ -1254,6 +1366,16 @@ function wireEvents() {
   // Account
   $('#sync-btn').addEventListener('click', () => { renderAccount(); $('#account-dlg').showModal(); });
   $('#sync-now').addEventListener('click', () => syncNow());
+  $('#backup-export').addEventListener('click', () => {
+    backupMessage('');
+    exportBackup().catch((e) => backupMessage(`Couldn't save the backup: ${e.message || e}`, false));
+  });
+  $('#backup-import').addEventListener('click', () => { backupMessage(''); $('#backup-file').click(); });
+  $('#backup-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) importBackup(file).catch((err) => backupMessage(err.message || String(err), false));
+  });
   document.querySelectorAll('[data-sprites]').forEach((b) => b.addEventListener('click', () => {
     prefs.spriteStyle = b.dataset.sprites;
     savePrefs();

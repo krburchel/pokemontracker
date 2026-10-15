@@ -1,7 +1,7 @@
 // App files: network-first so updates show up right away, cached copy when offline.
 // Sprites and PokéAPI data: cache-first, since they never change.
 // Firebase sync and sign-in requests (googleapis.com) are never cached.
-var CACHE = 'poketracker-v11';
+var CACHE = 'poketracker-v12';
 var SPRITES = 'poketracker-sprites-v1';
 var POKEAPI = 'poketracker-pokeapi-v1';
 var ASSETS = [

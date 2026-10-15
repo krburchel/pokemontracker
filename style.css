@@ -461,6 +461,14 @@ dialog.sheet.bottom {
 .sheet-actions button { flex: 1; padding: 12px; background: var(--bg); }
 .sheet-actions .primary { background: var(--accent); }
 
+/* Backup in the account dialog */
+.backup { border-top: 1px solid var(--line); padding-top: 12px; font-size: 14px; }
+.backup-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
+.backup-head small { font-size: 12px; }
+.backup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.backup-actions button { background: var(--bg); font-size: 14px; padding: 10px 8px; }
+.backup .msg { margin: 6px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+
 /* Settings row in the account dialog */
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0 12px; font-size: 14px; }
 .setting .seg button { padding: 6px 12px; font-size: 13px; background: transparent; color: var(--muted); }

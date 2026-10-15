@@ -108,6 +108,15 @@
       <button data-sprites="pixel">Pixel</button>
     </div>
   </div>
+  <section class="backup">
+    <div class="backup-head"><span>Backup</span><small id="backup-status" class="muted"></small></div>
+    <div class="backup-actions">
+      <button id="backup-export">Download backup</button>
+      <button id="backup-import">Restore from file…</button>
+    </div>
+    <input id="backup-file" type="file" accept=".json,application/json" hidden>
+    <p id="backup-msg" class="msg" role="status"></p>
+  </section>
   <details id="mac-password-box" class="mac-pw" hidden>
     <summary>Mac app password</summary>
     <p><b id="mac-password-title">Mac password.</b> <span id="mac-password-hint"></span></p>
