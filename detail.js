@@ -203,23 +203,37 @@ function renderOwnership() {
     const ptName = pt ? store.rows.get(pt)?.data.name : null;
     return `<div class="own ${shi ? 'has-shiny' : reg ? 'has-reg' : ''}" data-game="${g.id}">
       <div class="own-row">
-        <span class="own-game">${esc(g.shortName)}${ptName ? ` <small>· ${esc(ptName)}</small>` : ''}</span>
+        <span class="own-game">${esc(g.shortName)}${ptName ? ` <small>· ${esc(ptName)}</small>` : ''}` +
+          `<span class="own-tags">${[...new Set([...(reg?.data.versions || []), ...(shi?.data.versions || [])])].map((v) => versionTag(g.id, v)).join('')}</span></span>
         <button class="pill ${reg ? 'on' : ''}" data-act="own" data-shiny="0">${reg ? '✓' : '○'} Regular</button>
         <button class="pill shiny ${shi ? 'on' : ''}" data-act="own" data-shiny="1">${shi ? '✨' : '✧'} Shiny</button>
         ${reg || shi ? `<button class="ghost chev" data-act="expand" aria-label="Notes, tags, date">${open ? '▴' : '▾'}</button>` : '<span class="chev"></span>'}
       </div>
-      ${open ? [reg && recordEditor(reg, 'Regular'), shi && recordEditor(shi, 'Shiny')].filter(Boolean).join('') : ''}
+      ${open ? [reg && recordEditor(reg, 'Regular', g.id), shi && recordEditor(shi, 'Shiny', g.id)].filter(Boolean).join('') : ''}
     </div>`;
   }).join('');
 }
 
+// YYYY-MM-DD in the viewer's time zone (an ISO string's first 10 chars are UTC).
+function localDate(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const tagsOf = (raw) => (raw || '').split(',').map((t) => t.trim()).filter(Boolean);
 
-function recordEditor(row, label) {
+function recordEditor(row, label, gameId) {
   const d = row.data;
-  const date = (d.caughtAt || '').slice(0, 10);
+  const date = localDate(d.caughtAt);
+  const vs = versionsOf(gameId);
+  const versionToggles = vs.length ? `<div class="rec-versions"><span class="muted">In:</span>` + vs.map((v) => {
+    const on = (d.versions || []).includes(v.id);
+    return `<button class="vbtn ${on ? 'on' : ''}" style="--vc:${v.color}" data-act="ver" data-version="${v.id}" aria-pressed="${on}">${esc(v.label)}</button>`;
+  }).join('') + '</div>' : '';
   return `<div class="rec-edit" data-rec="${esc(row.id)}">
     <div class="rec-line"><b>${label}</b><input type="date" data-field="caughtAt" value="${esc(date)}" aria-label="Catch date"></div>
+    ${versionToggles}
     <textarea data-field="notes" rows="2" placeholder="Notes (e.g. Route 5, Quick Ball, lvl 12)">${esc(d.notes)}</textarea>
     <input data-field="tagsRaw" value="${esc(d.tagsRaw)}" placeholder="Tags, comma-separated (favorite, for-trade)">
     <div class="chips">${tagsOf(d.tagsRaw).map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>
@@ -282,6 +296,18 @@ function onDetailClick(e) {
       renderOwnership();
       break;
     }
+    case 'ver': {
+      // Unlike the dex, unticking the last version here keeps the catch
+      // (it just becomes "version not set"); use the Regular/Shiny pill to remove it.
+      const row = store.rows.get(btn.closest('[data-rec]').dataset.rec);
+      if (!row || row.deleted) break;
+      const v = btn.dataset.version;
+      const cur = row.data.versions || [];
+      write('catch', row.id, { ...row.data, versions: cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v] });
+      renderOwnership();
+      render();
+      break;
+    }
     case 'own': {
       const gid = btn.closest('[data-game]').dataset.game;
       toggleCatch(sp.id, gid, btn.dataset.shiny === '1', ptFor(gid) || null, catchIndex());
@@ -301,9 +327,12 @@ function onDetailChange(e) {
   const d = { ...row.data };
   if (field === 'caughtAt') {
     if (!e.target.value) return;
-    // Keep the original time of day; only the date changes.
-    const time = (d.caughtAt || '').slice(10) || 'T12:00:00.000Z';
-    d.caughtAt = e.target.value + time;
+    // Change the local calendar date; keep the original local time of day.
+    const [y, m, day] = e.target.value.split('-').map(Number);
+    const when = d.caughtAt ? new Date(d.caughtAt) : new Date();
+    if (Number.isNaN(when.getTime())) when.setTime(Date.now());
+    when.setFullYear(y, m - 1, day);
+    d.caughtAt = when.toISOString();
   } else if (field === 'tagsRaw') {
     d.tagsRaw = tagsOf(e.target.value).join(', ');
     e.target.value = d.tagsRaw;

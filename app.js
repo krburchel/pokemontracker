@@ -48,6 +48,44 @@ let GAMES = [];
 let BADGES = {};   // game id -> [{id, name, type, category}] (from the Mac app's GymData)
 const BADGE_CATEGORIES = ['Gym', 'Trial', 'Kahuna', 'Titan', 'Team Star', 'Noble'];
 
+// Versions within paired games, for marking which copy a catch is in. Ids match
+// the Mac app's exclusives.json (PokéAPI version names). Catch records carry
+// them as data.versions: string[] (absent/empty = not specified).
+const VERSIONS = {
+  gsc: [['gold', 'Gold', '#c9a227'], ['silver', 'Silver', '#8e9aa8'], ['crystal', 'Crystal', '#3fb6c9']],
+  rse: [['ruby', 'Ruby', '#d33a3a'], ['sapphire', 'Sapphire', '#2f6fd6'], ['emerald', 'Emerald', '#2e9d58']],
+  frlg: [['firered', 'FireRed', '#e2532d'], ['leafgreen', 'LeafGreen', '#4caf50']],
+  dpp: [['diamond', 'Diamond', '#3b7bd8'], ['pearl', 'Pearl', '#d8669a'], ['platinum', 'Platinum', '#8e8e9a']],
+  hgss: [['heartgold', 'HeartGold', '#e0952b'], ['soulsilver', 'SoulSilver', '#8e9aa8']],
+  bw: [['black', 'Black', '#3b3f6b'], ['white', 'White', '#7aa7a4']],
+  b2w2: [['black-2', 'Black 2', '#2f8f8f'], ['white-2', 'White 2', '#55b59a']],
+  xy: [['x', 'X', '#2f6fd6'], ['y', 'Y', '#d33a3a']],
+  oras: [['omega-ruby', 'Omega Ruby', '#d33a3a'], ['alpha-sapphire', 'Alpha Sapphire', '#2f6fd6']],
+  sumo: [['sun', 'Sun', '#e8892b'], ['moon', 'Moon', '#4b4fb0']],
+  usum: [['ultra-sun', 'Ultra Sun', '#e8892b'], ['ultra-moon', 'Ultra Moon', '#4b4fb0']],
+  letsgo: [['lets-go-pikachu', 'Pikachu', '#d9b400'], ['lets-go-eevee', 'Eevee', '#9b6b43']],
+  swsh: [['sword', 'Sword', '#2ba8d6'], ['shield', 'Shield', '#d6457a']],
+  bdsp: [['brilliant-diamond', 'Brilliant Diamond', '#3b7bd8'], ['shining-pearl', 'Shining Pearl', '#d8669a']],
+  sv: [['scarlet', 'Scarlet', '#d33a3a'], ['violet', 'Violet', '#8e44c9']],
+};
+const versionsOf = (gameId) => (VERSIONS[gameId] || []).map(([id, label, color]) => ({ id, label, color }));
+// Version tag text that fits a dex cell.
+const VERSION_SHORT = { 'omega-ruby': 'OR', 'alpha-sapphire': 'AS', 'ultra-sun': 'US', 'ultra-moon': 'UM',
+  'brilliant-diamond': 'BD', 'shining-pearl': 'SP', firered: 'FR', leafgreen: 'LG', heartgold: 'HG',
+  soulsilver: 'SS', 'black-2': 'B2', 'white-2': 'W2', platinum: 'Plat', sapphire: 'Sapph', diamond: 'Dia' };
+function versionTag(gameId, vid, short = true) {
+  const v = versionsOf(gameId).find((x) => x.id === vid);
+  if (!v) return '';
+  return `<span class="vtag" style="background:${v.color}">${esc(short ? VERSION_SHORT[vid] || v.label : v.label)}</span>`;
+}
+// The version new taps mark in the current game (remembered per game).
+function activeVersion(gameId) {
+  const vs = versionsOf(gameId);
+  if (!vs.length) return null;
+  const v = (prefs.versionByGame || {})[gameId];
+  return vs.some((x) => x.id === v) ? v : vs[0].id;
+}
+
 // Official game logos in logos/{game}-{n}.webp (one per version of paired games).
 const GAME_LOGOS = { home: 1, pogo: 1, gsc: 2, rse: 2, frlg: 2, dpp: 2, hgss: 2, bw: 2, b2w2: 2, xy: 2, oras: 2, sumo: 2, usum: 2, letsgo: 2, swsh: 2, bdsp: 2, legendsarceus: 1, sv: 2, legendsza: 1 };
 const gameLogos = (gameId, cls = '') => Array.from({ length: GAME_LOGOS[gameId] || 0 },
@@ -267,16 +305,35 @@ function catchIndex() {
   return byKey;
 }
 
-function toggleCatch(speciesId, gameId, isShiny, playthroughId, index) {
+// Without `version`: caught ⇄ not caught. With `version` (paired games):
+// toggles just that copy — adding it to an existing catch, or deleting the
+// catch when it was the last copy marked.
+function toggleCatch(speciesId, gameId, isShiny, playthroughId, index, version = null) {
   const key = catchKey({ speciesId, gameId, isShiny, playthroughId });
   const existing = index.get(key);
   if (existing?.length) {
+    if (version) {
+      const [first, ...dupes] = existing;
+      const versions = first.data.versions || [];
+      if (!versions.includes(version)) {
+        write('catch', first.id, { ...first.data, versions: [...versions, version] });
+        return true;
+      }
+      const left = versions.filter((v) => v !== version);
+      if (left.length) {
+        write('catch', first.id, { ...first.data, versions: left });
+        return false;
+      }
+      for (const r of dupes) write('catch', r.id, r.data, true);
+      write('catch', first.id, first.data, true);
+      return false;
+    }
     for (const r of existing) write('catch', r.id, r.data, true);
     return false;
   }
   write('catch', uuid(), {
     speciesId, gameId, isShiny, playthroughId: playthroughId || null,
-    notes: '', tagsRaw: '', caughtAt: nowISO(),
+    notes: '', tagsRaw: '', caughtAt: nowISO(), ...(version ? { versions: [version] } : {}),
   });
   return true;
 }
@@ -311,7 +368,7 @@ function huntOdds(h) {
 // ---------------------------------------------------------------------------
 const prefs = Object.assign({
   tab: 'dex', gameId: 'home', playthroughId: '', mode: 'regular',
-  gen: 'all', type: 'all', status: 'all', tag: 'all', lastCaughtGame: 'sv',
+  gen: 'all', type: 'all', status: 'all', tag: 'all', lastCaughtGame: 'sv', versionByGame: {},
   reviewYear: null, badgesOpen: true,
 }, readJSON(PREFS_KEY) || {});
 const savePrefs = () => writeJSON(PREFS_KEY, prefs);
@@ -405,7 +462,19 @@ function renderDexControls() {
   $('#type-filter').innerHTML = '<option value="all">All types</option>' +
     types.map((t) => `<option value="${t}">${t[0].toUpperCase() + t.slice(1)}</option>`).join('');
   $('#type-filter').value = prefs.type;
+  // Status filter: per-version options for paired games.
+  const vs = versionsOf(game.id);
+  const statusOpts = [['all', 'All'], ['missing', 'Missing'], ['caught', 'Caught'],
+    ...vs.flatMap((v) => [[`missing:${v.id}`, `Missing in ${v.label}`], [`caught:${v.id}`, `In ${v.label}`]])];
+  if (!statusOpts.some(([v]) => v === prefs.status)) prefs.status = 'all';
+  $('#status-filter').innerHTML = statusOpts.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
   $('#status-filter').value = prefs.status;
+
+  // "Mark in:" version picker for paired games.
+  const active = activeVersion(game.id);
+  $('#version-row').hidden = !vs.length || prefs.mode === 'info';
+  $('#version-row').innerHTML = vs.length ? '<span class="muted">Mark in:</span>' + vs.map((v) =>
+    `<button data-version="${v.id}" class="${v.id === active ? 'on' : ''}" style="--vc:${v.color}" aria-pressed="${v.id === active}">${esc(v.label)}</button>`).join('') : '';
   document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === prefs.mode));
 
   // Tag filter: only shown when records in this game + playthrough carry tags.
@@ -457,13 +526,18 @@ function renderDex() {
   const pt = prefs.playthroughId || '';
   const index = catchIndex();
   const has = (id, shiny) => index.has(catchKey({ speciesId: id, gameId: game.id, isShiny: shiny, playthroughId: pt }));
+  const vs = versionsOf(game.id);
+  // Which copies a species' catch is marked in (regular or shiny record).
+  const versionsFor = (id, shiny) => index.get(catchKey({ speciesId: id, gameId: game.id, isShiny: shiny, playthroughId: pt }))?.[0]?.data.versions || [];
 
   const dexSpecies = game.species.map((id) => SPECIES_BY_ID.get(id)).filter(Boolean);
   const caughtCount = dexSpecies.filter((s) => has(s.id, false)).length;
   const shinyCount = dexSpecies.filter((s) => has(s.id, true)).length;
   const pct = dexSpecies.length ? Math.round((caughtCount / dexSpecies.length) * 100) : 0;
+  const perVersion = vs.map((v) => `${dexSpecies.filter((s) => versionsFor(s.id, false).includes(v.id)).length} ${esc(v.label)}`).join(' · ');
   $('#dex-progress').innerHTML =
     `${caughtCount} / ${dexSpecies.length} caught (${pct}%) · ${shinyCount} shiny` +
+    (vs.length ? `<span class="per-version">${perVersion}</span>` : '') +
     `<div class="bar"><i style="width:${pct}%"></i></div>`;
 
   const q = search.trim().toLowerCase();
@@ -483,8 +557,9 @@ function renderDex() {
     if (prefs.type !== 'all' && !s.types.includes(prefs.type)) return false;
     if (prefs.tag !== 'all' && !recs.get(s.id)?.tags.includes(prefs.tag)) return false;
     if (prefs.status !== 'all') {
-      const owned = has(s.id, target);
-      if (prefs.status === 'caught' ? !owned : owned) return false;
+      const [want, version] = prefs.status.split(':');
+      const owned = version ? versionsFor(s.id, target).includes(version) : has(s.id, target);
+      if (want === 'caught' ? !owned : owned) return false;
     }
     if (q && !s.name.toLowerCase().includes(q) && !dexNum(s).includes(q.replace(/^#/, ''))) return false;
     return true;
@@ -498,7 +573,9 @@ function renderDex() {
       `${shiny ? '<span class="badge">✨</span>' : ''}` +
       `${recs.get(s.id)?.notes ? '<span class="note-dot" title="Has notes">📝</span>' : ''}` +
       `<img loading="lazy" alt="" draggable="false" src="${spriteURL(s.id, shiny)}">` +
-      `<span class="num">${dexNum(s)}</span><span class="name">${esc(s.name)}</span></button>`;
+      `<span class="num">${dexNum(s)}</span><span class="name">${esc(s.name)}</span>` +
+      (vs.length ? `<span class="vtags">${versionsFor(s.id, target).map((v) => versionTag(game.id, v)).join('')}</span>` : '') +
+      `</button>`;
   }).join('') : '<p class="empty">Nothing matches these filters.</p>';
 }
 
@@ -527,7 +604,8 @@ function onDexTap(e) {
   if (suppressClick) { suppressClick = false; return; }
   const id = Number(cell.dataset.id);
   if (prefs.mode === 'info') { openDetail(id); return; }
-  const added = toggleCatch(id, currentGame().id, prefs.mode === 'shiny', prefs.playthroughId || null, catchIndex());
+  const game = currentGame();
+  const added = toggleCatch(id, game.id, prefs.mode === 'shiny', prefs.playthroughId || null, catchIndex(), activeVersion(game.id));
   renderDex();
   if (added) {
     const fresh = $(`#dex-grid .cell[data-id="${id}"]`);
@@ -897,6 +975,13 @@ function wireEvents() {
 
   // Dex controls
   $('#game-btn').addEventListener('click', openGamePicker);
+  $('#version-row').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-version]');
+    if (!b) return;
+    prefs.versionByGame = { ...(prefs.versionByGame || {}), [currentGame().id]: b.dataset.version };
+    savePrefs();
+    renderDex();
+  });
   $('#game-grid').addEventListener('click', (e) => {
     const tile = e.target.closest('[data-game]');
     if (!tile) return;

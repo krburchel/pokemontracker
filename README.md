@@ -12,6 +12,8 @@ Live at https://krburchel.github.io/pokemontracker/
 
 - `data/species.json`, `data/games.json` are copied from the Mac app's Resources; `data/badges.json` is
   generated from its `Services/GymData.swift`. Re-copy when those change.
+- Catches in paired games may carry `versions: ["scarlet", ...]` (ids in `VERSIONS` in app.js, same as the
+  Mac app's exclusives.json); the Mac app stores them as `versionsRaw`.
 - Record payloads (the `json` field) must match `SyncDTO` in the Mac app's `Services/SyncEngine.swift`.
 - `firestore.rules` is the project's full ruleset (the old Z-A checklist app and its
   `pokemon_tracker/{uid}` data were removed 2026-10-14). Deploy with `firebase deploy --only firestore:rules`.

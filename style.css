@@ -365,3 +365,24 @@ dialog textarea { font: inherit; width: 100%; border: 1px solid var(--line); bor
 .game-tile .bar { width: 100%; margin-top: 0; }
 
 .row > .game-btn { flex: 2 1 0; }
+
+/* ---- Versions (paired games) ---------------------------------------------- */
+.version-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.version-row button, .vbtn {
+  padding: 6px 12px; border-radius: 999px; font-size: 13px;
+  background: var(--card); border: 2px solid var(--vc); color: var(--text);
+}
+.version-row button.on, .vbtn.on { background: var(--vc); color: #fff; font-weight: 700; }
+.vbtn { padding: 4px 10px; font-size: 12px; }
+.rec-versions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
+.per-version { margin-left: 6px; }
+.per-version::before { content: '· '; }
+.vtags { display: flex; gap: 3px; justify-content: center; flex-wrap: wrap; margin-top: 3px; }
+.vtags:empty { display: none; }
+.vtag {
+  font-size: 9px; font-weight: 700; color: #fff; padding: 1px 5px; border-radius: 999px;
+  letter-spacing: .02em; text-shadow: 0 1px 1px rgb(0 0 0 / .25);
+}
+.own-tags { display: flex; gap: 3px; flex-wrap: wrap; }
+.own-tags:empty { display: none; }
+.own-game { display: grid; gap: 2px; }
