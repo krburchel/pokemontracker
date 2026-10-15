@@ -1,11 +1,11 @@
 // App files: network-first so updates show up right away, cached copy when offline.
 // Sprites and PokéAPI data: cache-first, since they never change.
 // Firebase sync and sign-in requests (googleapis.com) are never cached.
-var CACHE = 'poketracker-v7';
+var CACHE = 'poketracker-v8';
 var SPRITES = 'poketracker-sprites-v1';
 var POKEAPI = 'poketracker-pokeapi-v1';
 var ASSETS = [
-  './', './index.html', './style.css', './app.js', './detail.js', './timeline.js', './manifest.json',
+  './', './index.html', './style.css', './icons.js', './app.js', './detail.js', './timeline.js', './manifest.json',
   './data/species.json', './data/games.json', './data/badges.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon-32.png',
   './vendor/firebase/firebase-app-compat.js',
@@ -78,6 +78,18 @@ self.addEventListener('fetch', function (e) {
   }
 
   if (url.origin !== self.location.origin) return;
+  // Bundled sprites never change: cache-first like the remote ones.
+  if (url.pathname.indexOf('/sprites/') !== -1) {
+    e.respondWith(caches.open(SPRITES).then(function (c) {
+      return c.match(req).then(function (hit) {
+        return hit || fetch(req).then(function (res) {
+          if (res.ok) c.put(req, res.clone());
+          return res;
+        });
+      });
+    }));
+    return;
+  }
   e.respondWith(fetch(req).then(function (res) {
     if (res.ok) {
       var copy = res.clone();

@@ -51,31 +51,31 @@
           <button id="game-btn" class="game-btn" aria-haspopup="dialog"></button>
           <select id="pt-select" aria-label="Playthrough"></select>
         </div>
-        <div id="dex-progress" class="progress-line"></div>
+        <div class="progress-row">
+          <div id="dex-progress" class="progress-line"></div>
+          <button id="badge-pill" class="badge-pill" aria-expanded="false" aria-controls="badge-strip" hidden></button>
+        </div>
         <div id="badge-strip" class="badge-strip" hidden></div>
-        <div class="row mode-row">
-          <div class="seg" role="group" aria-label="What tapping a Pokémon does">
-            <button data-mode="regular" class="on">Caught</button>
-            <button data-mode="shiny">✨ Shiny</button>
-            <button data-mode="info" title="Tap a Pokémon to see its details">ⓘ Info</button>
+        <div class="toolbar">
+          <label class="searchbox"><span id="search-icon"></span>
+            <input id="dex-search" type="search" placeholder="Search" aria-label="Search"></label>
+          <button id="filter-btn" class="filter-btn" aria-haspopup="dialog"><span id="filter-icon"></span>Filters<span id="filter-count" class="count" hidden></span></button>
+        </div>
+        <div class="modebar">
+          <div class="seg iconseg" role="group" aria-label="What tapping a Pokémon does">
+            <button data-mode="regular" class="on" aria-label="Caught" title="Tap marks caught"></button>
+            <button data-mode="shiny" aria-label="Shiny" title="Tap marks shiny"></button>
+            <button data-mode="info" aria-label="Info" title="Tap opens details"></button>
           </div>
-          <input id="dex-search" type="search" placeholder="Search" aria-label="Search">
+          <div id="version-row" class="version-row" role="group" aria-label="Which version taps mark" hidden></div>
         </div>
-        <div id="version-row" class="version-row" role="group" aria-label="Which version taps mark" hidden></div>
-        <div class="row filter-row">
-          <select id="gen-filter" aria-label="Generation"></select>
-          <select id="type-filter" aria-label="Type"></select>
-          <select id="status-filter" aria-label="Status">
-          </select>
-          <select id="tag-filter" aria-label="Tag" hidden></select>
-        </div>
-        <p class="hint">Tip: long-press (or right-click) any Pokémon for details, notes and tags.</p>
+        <p id="dex-hint" class="hint" hidden>Tip: long-press (or right-click) any Pokémon for details, notes and tags.</p>
       </div>
       <div id="dex-grid" class="grid"></div>
     </section>
 
     <section id="tab-hunts" class="tab" hidden>
-      <button id="new-hunt" class="primary wide">＋ New Hunt</button>
+      <button id="new-hunt" class="primary wide">New Hunt</button>
       <div id="hunt-list"></div>
     </section>
 
@@ -89,10 +89,10 @@
   </main>
 
   <nav class="tabbar">
-    <button data-tab="dex" class="on"><span>◉</span>Dex</button>
-    <button data-tab="hunts"><span>✨</span>Hunts</button>
-    <button data-tab="timeline"><span>☰</span>Timeline</button>
-    <button data-tab="stats"><span>▤</span>Stats</button>
+    <button data-tab="dex" class="on" data-icon="dex">Dex</button>
+    <button data-tab="hunts" data-icon="hunts">Hunts</button>
+    <button data-tab="timeline" data-icon="timeline">Timeline</button>
+    <button data-tab="stats" data-icon="stats">Stats</button>
   </nav>
 </div>
 
@@ -100,6 +100,13 @@
   <h2>Sync</h2>
   <p id="account-email"></p>
   <p id="account-status" class="muted"></p>
+  <div class="setting">
+    <span>Pokémon sprites</span>
+    <div class="seg" role="group" aria-label="Sprite style">
+      <button data-sprites="home">HOME 3D</button>
+      <button data-sprites="pixel">Pixel</button>
+    </div>
+  </div>
   <details id="mac-password-box" class="mac-pw" hidden>
     <summary>Mac app password</summary>
     <p><b id="mac-password-title">Mac password.</b> <span id="mac-password-hint"></span></p>
@@ -141,7 +148,7 @@
 
 <dialog id="caught-dlg">
   <form id="caught-form" method="dialog">
-    <h2>Shiny caught! 🎉</h2>
+    <h2>Shiny caught!</h2>
     <p id="caught-name" class="muted"></p>
     <label>Caught in
       <select id="caught-game"></select>
@@ -155,7 +162,7 @@
 
 <dialog id="phase-dlg">
   <form id="phase-form" method="dialog">
-    <h2>Phase ✨</h2>
+    <h2>Log a phase</h2>
     <p id="phase-sub" class="muted"></p>
     <label>Shiny you found
       <input id="phase-species" type="search" placeholder="Search Pokémon" autocomplete="off" required>
@@ -180,6 +187,18 @@
       <button type="submit" class="primary">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="filter-dlg" class="sheet bottom" aria-label="Filters">
+  <div class="filter-body">
+    <div class="grabber" aria-hidden="true"></div>
+    <h2>Filters</h2>
+    <div id="filter-groups"></div>
+    <div class="sheet-actions">
+      <button type="button" id="filter-reset">Reset</button>
+      <button type="button" id="filter-done" class="primary">Show results</button>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="game-dlg" class="sheet" aria-label="Choose a game">
@@ -208,6 +227,7 @@
 <script src="vendor/firebase/firebase-app-compat.js"></script>
 <script src="vendor/firebase/firebase-auth-compat.js"></script>
 <script src="vendor/firebase/firebase-firestore-compat.js"></script>
+<script src="icons.js"></script>
 <script src="detail.js"></script>
 <script src="timeline.js"></script>
 <script src="app.js"></script>

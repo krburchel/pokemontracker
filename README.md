@@ -5,8 +5,8 @@ same data). Living dex with gym badges, Pokémon detail sheet (stats, evolutions
 notes/tags per catch), shiny hunts with phases/notes/best-method suggestions, timeline and stats,
 synced through Firebase project `pokemon-tracker-8d5ac` (Firestore `users/{uid}/records/{id}`).
 
-Files: `app.js` (sync, dex, hunts, stats, auth), `detail.js` (detail sheet + PokéAPI),
-`timeline.js` (timeline tab). Script order in `index.html`: detail.js, timeline.js, app.js.
+Files: `icons.js` (icon set), `app.js` (sync, dex, hunts, stats, auth), `detail.js` (detail sheet + PokéAPI),
+`timeline.js` (timeline tab). Script order in `index.html`: icons.js, detail.js, timeline.js, app.js.
 
 Live at https://krburchel.github.io/pokemontracker/
 
@@ -20,5 +20,8 @@ Live at https://krburchel.github.io/pokemontracker/
 - `logos/` holds the official English game logos (Nintendo / The Pokémon Company trademarks, personal fan use),
   from Bulbagarden Archives, plus Gold/Silver from Wikipedia; re-encoded to 112px-tall WebP. One file per
   version of paired games (`{game}-0.webp`, `{game}-1.webp`); counts are in `GAME_LOGOS` in app.js.
+- `sprites/home/{r|s}-{id}.webp` are 144px copies of PokéAPI's HOME 3D renders (regular/shiny) for grids;
+  the detail sheet loads the full-size render. Settings → Pokémon sprites switches to pixel sprites.
+- `icons.js` is the shared line-icon set (tab bar, toolbar, markers, timeline).
 - `vendor/firebase` is the Firebase JS SDK 12.19.0 compat build (Apache 2.0), bundled for offline use.
 - Bump `CACHE` in `sw.js` when shipping changes so installed copies refresh their offline cache.

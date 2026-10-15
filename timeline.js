@@ -14,28 +14,28 @@ function timelineEvents() {
 
   for (const r of live('catch')) {
     const c = r.data;
-    add(c.caughtAt, c.isShiny ? '✨' : '✓', c.isShiny ? 'yellow' : 'green',
+    add(c.caughtAt, c.isShiny ? 'shiny' : 'caught', c.isShiny ? 'yellow' : 'green',
       `Caught ${c.isShiny ? 'shiny ' : ''}${speciesName(c.speciesId)} in ${gameName(c.gameId)}`);
   }
   const hunts = new Map(live('hunt').map((r) => [r.id, r.data]));
   for (const h of hunts.values()) {
-    add(h.startedAt, '◎', 'blue', `Started ${speciesName(h.speciesId)} hunt (${h.method})`);
-    if (h.completedAt) add(h.completedAt, '🏅', 'pink', `Caught shiny ${speciesName(h.speciesId)} after ${(h.encounters || 0).toLocaleString()} encounters`);
-    if (h.abandonedAt) add(h.abandonedAt, '⊘', 'orange', `Abandoned ${speciesName(h.speciesId)} hunt at ${(h.encounters || 0).toLocaleString()} encounters`);
+    add(h.startedAt, 'start', 'blue', `Started ${speciesName(h.speciesId)} hunt (${h.method})`);
+    if (h.completedAt) add(h.completedAt, 'trophy', 'pink', `Caught shiny ${speciesName(h.speciesId)} after ${(h.encounters || 0).toLocaleString()} encounters`);
+    if (h.abandonedAt) add(h.abandonedAt, 'abandon', 'orange', `Abandoned ${speciesName(h.speciesId)} hunt at ${(h.encounters || 0).toLocaleString()} encounters`);
   }
   for (const r of live('phase')) {
     const p = r.data;
     const target = hunts.get(p.huntId);
-    add(p.endedAt, '✨', 'yellow', `Phased into shiny ${speciesName(p.speciesId)} at #${(p.encountersAtPhase || 0).toLocaleString()}` +
+    add(p.endedAt, 'shiny', 'yellow', `Phased into shiny ${speciesName(p.speciesId)} at #${(p.encountersAtPhase || 0).toLocaleString()}` +
       ` while hunting ${target ? speciesName(target.speciesId) : 'another target'}`);
   }
   for (const r of live('playthrough')) {
-    add(r.data.createdAt, '＋', 'purple', `Started new playthrough "${r.data.name}" in ${gameName(r.data.gameId)}`);
+    add(r.data.createdAt, 'plus', 'purple', `Started new playthrough "${r.data.name}" in ${gameName(r.data.gameId)}`);
   }
   for (const r of live('badge')) {
     const b = r.data;
     const name = (BADGES[b.gameId] || []).find((x) => x.id === b.badgeId)?.name || b.badgeId;
-    add(b.earnedAt, '🎖', 'red', `Earned ${name} in ${gameName(b.gameId)}`);
+    add(b.earnedAt, 'badge', 'red', `Earned ${name} in ${gameName(b.gameId)}`);
   }
   return out.filter((e) => !Number.isNaN(e.date.getTime())).sort((a, b) => b.date - a.date);
 }
@@ -77,14 +77,14 @@ function renderTimeline() {
   }
   const now = new Date();
   const fmtDay = (d) => d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  const row = (e, withDate) => `<div class="tl-row tint-${e.tint}"><span class="tl-icon">${e.icon}</span>` +
+  const row = (e, withDate) => `<div class="tl-row tint-${e.tint}"><span class="tl-icon">${icon(e.icon)}</span>` +
     `<span class="tl-label">${esc(e.label)}</span><span class="tl-time">${withDate ? e.date.getFullYear()
       : e.date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span></div>`;
 
   // This day in previous years
   const onThisDay = events.filter((e) => e.date.getMonth() === now.getMonth() && e.date.getDate() === now.getDate()
     && e.date.getFullYear() < now.getFullYear());
-  const thisDay = onThisDay.length ? `<div class="card memory"><h2>📅 This day in previous years</h2>
+  const thisDay = onThisDay.length ? `<div class="card memory"><h2>${icon('calendar')}This day in previous years</h2>
     ${onThisDay.slice(0, 6).map((e) => row(e, true)).join('')}
     ${onThisDay.length > 6 ? `<p class="muted">+ ${onThisDay.length - 6} more</p>` : ''}</div>` : '';
 
@@ -94,7 +94,7 @@ function renderTimeline() {
   const r = yearReview(events, prefs.reviewYear);
   const monthName = (m) => new Date(2000, m, 1).toLocaleDateString([], { month: 'long' });
   const stat = (n, label) => `<div class="tile"><b>${n.toLocaleString()}</b><span>${label}</span></div>`;
-  const review = `<div class="card"><div class="card-head"><h2>🏆 Year in review</h2>
+  const review = `<div class="card"><div class="card-head"><h2>${icon('trophy')}Year in review</h2>
       <select id="review-year" aria-label="Year">${years.map((y) => `<option ${y === prefs.reviewYear ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
     <div class="tiles">${stat(r.catches, 'catches')}${stat(r.shinies, 'shinies')}${stat(r.started, 'hunts started')}${stat(r.completed, 'hunts completed')}</div>
     <ul class="review-facts">

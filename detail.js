@@ -175,10 +175,10 @@ function renderDetail() {
     </div>
     <div class="detail-head">
       <div class="sprites">
-        <figure><img alt="" src="${spriteURL(sp.id, false)}"><figcaption>Regular</figcaption></figure>
-        <figure><img alt="" src="${spriteURL(sp.id, true)}"><figcaption>Shiny</figcaption></figure>
+        <figure>${spriteImg(sp.id, false, '', true)}<figcaption>Regular</figcaption></figure>
+        <figure>${spriteImg(sp.id, true, '', true)}<figcaption>Shiny</figcaption></figure>
       </div>
-      <h2>${esc(sp.name)} <button class="ghost cry" data-act="cry" aria-label="Play cry">🔊</button></h2>
+      <h2>${esc(sp.name)} <button class="ghost cry" data-act="cry" aria-label="Play cry">${icon('sound')}</button></h2>
       <div class="muted">${dexNum(sp)} · Gen ${sp.generation}</div>
       <div class="types">${sp.types.map(typeBadge).join('')}</div>
     </div>
@@ -205,8 +205,8 @@ function renderOwnership() {
       <div class="own-row">
         <span class="own-game">${esc(g.shortName)}${ptName ? ` <small>· ${esc(ptName)}</small>` : ''}` +
           `<span class="own-tags">${[...new Set([...(reg?.data.versions || []), ...(shi?.data.versions || [])])].map((v) => versionTag(g.id, v)).join('')}</span></span>
-        <button class="pill ${reg ? 'on' : ''}" data-act="own" data-shiny="0">${reg ? '✓' : '○'} Regular</button>
-        <button class="pill shiny ${shi ? 'on' : ''}" data-act="own" data-shiny="1">${shi ? '✨' : '✧'} Shiny</button>
+        <button class="pill ${reg ? 'on' : ''}" data-act="own" data-shiny="0" aria-pressed="${!!reg}">${icon('caught')}Regular</button>
+        <button class="pill shiny ${shi ? 'on' : ''}" data-act="own" data-shiny="1" aria-pressed="${!!shi}">${icon('shiny')}Shiny</button>
         ${reg || shi ? `<button class="ghost chev" data-act="expand" aria-label="Notes, tags, date">${open ? '▴' : '▾'}</button>` : '<span class="chev"></span>'}
       </div>
       ${open ? [reg && recordEditor(reg, 'Regular', g.id), shi && recordEditor(shi, 'Shiny', g.id)].filter(Boolean).join('') : ''}
@@ -259,7 +259,7 @@ function renderDetailRemote() {
       const current = e.speciesId === (sp.baseSpeciesId ?? sp.id);
       const arrow = i > 0 ? `<span class="evo-arrow">→<small>${esc(e.trigger || '')}</small></span>` : '';
       return `${arrow}<button class="evo ${current ? 'current' : ''}" data-act="evo" data-id="${e.speciesId}" ${current ? 'disabled' : ''}>` +
-        `<img alt="" loading="lazy" src="${spriteURL(e.speciesId, false)}"><span>${esc(esp?.name || '#' + e.speciesId)}</span>` +
+        `${spriteImg(e.speciesId, false, 'loading="lazy"')}<span>${esc(esp?.name || '#' + e.speciesId)}</span>` +
         `<small class="${anyCaught.has(e.speciesId) ? 'yes' : ''}">${anyCaught.has(e.speciesId) ? '✓ caught' : '○ missing'}</small></button>`;
     }).join('') : '<p class="muted">Doesn\'t evolve.</p>';
     const enc = [...d.encounters.entries()]

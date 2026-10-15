@@ -125,8 +125,18 @@ function recommendMethods(speciesId, limit = 5) {
   return out.sort((a, b) => b.odds.rolls - a.odds.rolls || a.summary.localeCompare(b.summary)).slice(0, limit);
 }
 
-const spriteURL = (id, shiny) =>
-  `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${shiny ? 'shiny/' : ''}${id}.png`;
+const SPRITE_CDN = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/';
+const pixelSpriteURL = (id, shiny) => `${SPRITE_CDN}${shiny ? 'shiny/' : ''}${id}.png`;
+// HOME 3D renders: 144px copies ship with the app (sprites/home) for grids and
+// lists; `large` loads PokéAPI's full-size render for the detail sheet. Any
+// HOME image that fails to load falls back to the pixel sprite (see boot()).
+function spriteURL(id, shiny, large = false) {
+  if (prefs.spriteStyle === 'pixel') return pixelSpriteURL(id, shiny);
+  return large ? `${SPRITE_CDN}other/home/${shiny ? 'shiny/' : ''}${id}.png`
+    : `sprites/home/${shiny ? 's' : 'r'}-${id}.webp`;
+}
+const spriteImg = (id, shiny, attrs = '', large = false) =>
+  `<img ${attrs} alt="" draggable="false" src="${spriteURL(id, shiny, large)}" data-fallback="${pixelSpriteURL(id, shiny)}">`;
 const dexNum = (sp) => '#' + String(sp.baseSpeciesId ?? sp.id).padStart(4, '0');
 const speciesName = (id) => SPECIES_BY_ID.get(id)?.name ?? `#${id}`;
 const gameGroup = (g) => (g.releaseGen === 'cross' ? 'Cross-Game' : `Gen ${g.releaseGen}`);
@@ -369,7 +379,7 @@ function huntOdds(h) {
 const prefs = Object.assign({
   tab: 'dex', gameId: 'home', playthroughId: '', mode: 'regular',
   gen: 'all', type: 'all', status: 'all', tag: 'all', lastCaughtGame: 'sv', versionByGame: {},
-  reviewYear: null, badgesOpen: true,
+  reviewYear: null, badgesExpanded: false, spriteStyle: 'home', hintSeen: false,
 }, readJSON(PREFS_KEY) || {});
 const savePrefs = () => writeJSON(PREFS_KEY, prefs);
 let search = '';
@@ -451,63 +461,93 @@ function renderDexControls() {
     '<option value="__new">＋ New playthrough…</option>';
   $('#pt-select').value = prefs.playthroughId;
 
-  const dexSpecies = game.species.map((id) => SPECIES_BY_ID.get(id)).filter(Boolean);
-  const gens = [...new Set(dexSpecies.map((s) => s.generation))].sort((a, b) => a - b);
-  const types = [...new Set(dexSpecies.flatMap((s) => s.types))].sort();
-  if (prefs.gen !== 'all' && !gens.includes(Number(prefs.gen))) prefs.gen = 'all';
-  if (prefs.type !== 'all' && !types.includes(prefs.type)) prefs.type = 'all';
-  $('#gen-filter').innerHTML = '<option value="all">All gens</option>' +
-    gens.map((g) => `<option value="${g}">Gen ${g}</option>`).join('');
-  $('#gen-filter').value = String(prefs.gen);
-  $('#type-filter').innerHTML = '<option value="all">All types</option>' +
-    types.map((t) => `<option value="${t}">${t[0].toUpperCase() + t.slice(1)}</option>`).join('');
-  $('#type-filter').value = prefs.type;
-  // Status filter: per-version options for paired games.
+  // Filter choices for this game (shown in the Filters sheet).
+  const opts = filterOptions(game);
+  for (const [key, list] of Object.entries(opts)) {
+    if (prefs[key] !== 'all' && !list.some(([v]) => String(v) === String(prefs[key]))) prefs[key] = 'all';
+  }
+  const active = ['gen', 'type', 'status', 'tag'].filter((k) => prefs[k] !== 'all').length;
+  $('#filter-count').hidden = !active;
+  $('#filter-count').textContent = active;
+  $('#filter-btn').classList.toggle('active', active > 0);
+  $('#filter-btn').setAttribute('aria-label', active ? `Filters, ${active} on` : 'Filters');
+  if ($('#filter-dlg').open) renderFilterSheet();
+
+  // Mode buttons: icon only, plus a label on the active one.
+  const MODES = { regular: ['caught', 'Caught'], shiny: ['shiny', 'Shiny'], info: ['info', 'Info'] };
+  document.querySelectorAll('.iconseg button').forEach((b) => {
+    const [ic, label] = MODES[b.dataset.mode];
+    const on = b.dataset.mode === prefs.mode;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-pressed', on);
+    b.innerHTML = icon(ic) + (on ? `<span>${label}</span>` : '');
+  });
+
+  // "In:" version picker for paired games.
   const vs = versionsOf(game.id);
-  const statusOpts = [['all', 'All'], ['missing', 'Missing'], ['caught', 'Caught'],
-    ...vs.flatMap((v) => [[`missing:${v.id}`, `Missing in ${v.label}`], [`caught:${v.id}`, `In ${v.label}`]])];
-  if (!statusOpts.some(([v]) => v === prefs.status)) prefs.status = 'all';
-  $('#status-filter').innerHTML = statusOpts.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
-  $('#status-filter').value = prefs.status;
-
-  // "Mark in:" version picker for paired games.
-  const active = activeVersion(game.id);
+  const activeV = activeVersion(game.id);
+  // Long names (Brilliant Diamond, LeafGreen…) use initials for every version in that game.
+  const shortLabels = vs.some((v) => v.label.length > 8);
   $('#version-row').hidden = !vs.length || prefs.mode === 'info';
-  $('#version-row').innerHTML = vs.length ? '<span class="muted">Mark in:</span>' + vs.map((v) =>
-    `<button data-version="${v.id}" class="${v.id === active ? 'on' : ''}" style="--vc:${v.color}" aria-pressed="${v.id === active}">${esc(v.label)}</button>`).join('') : '';
-  document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === prefs.mode));
+  $('#version-row').innerHTML = vs.length ? '<span class="muted">In</span>' + vs.map((v) =>
+    `<button data-version="${v.id}" class="${v.id === activeV ? 'on' : ''}" style="--vc:${v.color}" aria-pressed="${v.id === activeV}" title="${esc(v.label)}">${esc(shortLabels ? VERSION_SHORT[v.id] || v.label : v.label)}</button>`).join('') : '';
+}
 
-  // Tag filter: only shown when records in this game + playthrough carry tags.
+// Choices per filter group for a game: [value, label][] each.
+function filterOptions(game) {
+  const dexSpecies = game.species.map((id) => SPECIES_BY_ID.get(id)).filter(Boolean);
   const pt = prefs.playthroughId || '';
+  const vs = versionsOf(game.id);
   const tags = [...new Set(live('catch')
     .filter((r) => r.data.gameId === game.id && (r.data.playthroughId || '') === pt)
     .flatMap((r) => tagsOf(r.data.tagsRaw)))].sort();
-  if (prefs.tag !== 'all' && !tags.includes(prefs.tag)) prefs.tag = 'all';
-  $('#tag-filter').hidden = !tags.length;
-  $('#tag-filter').innerHTML = '<option value="all">Any tag</option>' +
-    tags.map((t) => `<option value="${esc(t)}">#${esc(t)}</option>`).join('');
-  $('#tag-filter').value = prefs.tag;
+  return {
+    status: [['missing', 'Missing'], ['caught', 'Caught'],
+      ...vs.flatMap((v) => [[`missing:${v.id}`, `Missing in ${v.label}`], [`caught:${v.id}`, `In ${v.label}`]])],
+    gen: [...new Set(dexSpecies.map((s) => s.generation))].sort((a, b) => a - b).map((g) => [g, `Gen ${g}`]),
+    type: [...new Set(dexSpecies.flatMap((s) => s.types))].sort().map((t) => [t, t[0].toUpperCase() + t.slice(1)]),
+    tag: tags.map((t) => [t, `#${t}`]),
+  };
 }
 
-// Gym badges / trials / titans for the selected game + playthrough.
+const FILTER_TITLES = { status: 'Status', gen: 'Generation', type: 'Type', tag: 'Tag' };
+function renderFilterSheet() {
+  const opts = filterOptions(currentGame());
+  $('#filter-groups').innerHTML = Object.entries(opts).filter(([, list]) => list.length).map(([key, list]) =>
+    `<section class="filter-group"><h3>${FILTER_TITLES[key]}</h3><div class="choice" data-key="${key}">` +
+    `<button data-v="all" aria-pressed="${prefs[key] === 'all'}">${key === 'tag' ? 'Any tag' : 'All'}</button>` +
+    list.map(([v, label]) => {
+      const on = String(prefs[key]) === String(v);
+      const style = key === 'type' ? ` style="--tc:${TYPE_COLORS[v]}"` : '';
+      return `<button class="${key === 'type' ? 'type' : ''}" data-v="${esc(v)}" aria-pressed="${on}"${style}>${esc(label)}</button>`;
+    }).join('') + '</div></section>').join('');
+}
+
+// Gym badges / trials / titans for the selected game + playthrough: a count
+// pill next to the progress line that expands the full list.
 function renderBadges() {
   const game = currentGame();
   const list = BADGES[game.id] || [];
+  const pill = $('#badge-pill');
   const el = $('#badge-strip');
-  el.hidden = !list.length;
+  pill.hidden = !list.length;
+  el.hidden = !list.length || !prefs.badgesExpanded;
   if (!list.length) return;
   const pt = prefs.playthroughId || '';
   const earned = new Set(live('badge').filter((r) => r.data.gameId === game.id && (r.data.playthroughId || '') === pt)
     .map((r) => r.data.badgeId));
   const count = list.filter((b) => earned.has(b.id)).length;
+  pill.innerHTML = `${icon('badge')}${count} / ${list.length}`;
+  pill.setAttribute('aria-expanded', prefs.badgesExpanded);
+  pill.setAttribute('aria-label', `Badges: ${count} of ${list.length}. ${prefs.badgesExpanded ? 'Hide' : 'Show'} badges`);
+  if (el.hidden) return;
   const groups = BADGE_CATEGORIES.map((cat) => [cat, list.filter((b) => (b.category || 'Gym') === cat)]).filter(([, l]) => l.length);
-  el.innerHTML = `<details ${prefs.badgesOpen ? 'open' : ''}><summary>Badges <span class="muted">${count} / ${list.length}</span></summary>` +
-    groups.map(([cat, l]) => `<div class="badge-group">${groups.length > 1 ? `<span class="badge-cat">${cat}</span>` : ''}` +
-      l.map((b) => {
-        const on = earned.has(b.id);
-        return `<button class="gym ${on ? 'on' : ''}" data-badge="${esc(b.id)}" aria-pressed="${on}"` +
-          `${on ? ` style="background:${TYPE_COLORS[b.type] || '#888'}"` : ''} title="${esc(b.name)} (${b.type})">${esc(b.name)}</button>`;
-      }).join('') + '</div>').join('') + '</details>';
+  el.innerHTML = groups.map(([cat, l]) => `<div class="badge-group">${groups.length > 1 ? `<span class="badge-cat">${cat}</span>` : ''}` +
+    l.map((b) => {
+      const on = earned.has(b.id);
+      return `<button class="gym ${on ? 'on' : ''}" data-badge="${esc(b.id)}" aria-pressed="${on}"` +
+        `${on ? ` style="background:${TYPE_COLORS[b.type] || '#888'}"` : ''} title="${esc(b.name)} (${b.type})">${esc(b.name)}</button>`;
+    }).join('') + '</div>').join('');
 }
 
 function toggleBadge(badgeId) {
@@ -570,9 +610,9 @@ function renderDex() {
     const shiny = has(s.id, true);
     const cls = ['cell', caught && 'caught', shiny && 'shiny'].filter(Boolean).join(' ');
     return `<button class="${cls}" data-id="${s.id}" aria-pressed="${target ? shiny : caught}">` +
-      `${shiny ? '<span class="badge">✨</span>' : ''}` +
-      `${recs.get(s.id)?.notes ? '<span class="note-dot" title="Has notes">📝</span>' : ''}` +
-      `<img loading="lazy" alt="" draggable="false" src="${spriteURL(s.id, shiny)}">` +
+      `${shiny ? `<span class="badge" title="Shiny owned">${icon('shiny')}</span>` : ''}` +
+      `${recs.get(s.id)?.notes ? `<span class="note-dot" title="Has notes">${icon('note')}</span>` : ''}` +
+      spriteImg(s.id, shiny, 'loading="lazy" decoding="async"') +
       `<span class="num">${dexNum(s)}</span><span class="name">${esc(s.name)}</span>` +
       (vs.length ? `<span class="vtags">${versionsFor(s.id, target).map((v) => versionTag(game.id, v)).join('')}</span>` : '') +
       `</button>`;
@@ -632,7 +672,7 @@ function renderHunts() {
     const sincePhase = nPhases ? (d.encounters || 0) - Math.max(...myPhases.map((p) => p.data.encountersAtPhase || 0)) : null;
     return `<article class="hunt" data-id="${esc(h.id)}">
       <div class="hunt-head">
-        <img alt="" src="${spriteURL(d.speciesId, true)}">
+        ${spriteImg(d.speciesId, true)}
         <div class="meta">
           <h3>${esc(speciesName(d.speciesId))}</h3>
           <div class="sub">${esc(d.method)}${d.shinyCharm ? ' · Shiny Charm' : ''}${nPhases ? ` · ${nPhases} phase${nPhases > 1 ? 's' : ''}` : ''}</div>
@@ -649,7 +689,7 @@ function renderHunts() {
       `${sincePhase != null ? ` · ${sincePhase.toLocaleString()} since last phase` : ''}</div>
       ${d.notes ? `<p class="hunt-notes">${esc(d.notes)}</p>` : ''}
       <div class="hunt-actions">
-        <button class="caught-btn" data-act="caught">✨ Caught it!</button>
+        <button class="caught-btn" data-act="caught">${icon('shiny')}Caught it!</button>
         <button data-act="phase">Phase</button>
         <button data-act="notes">Notes</button>
         <button data-act="charm">${d.shinyCharm ? '− Charm' : '+ Charm'}</button>
@@ -660,7 +700,7 @@ function renderHunts() {
   };
 
   const phaseRow = (p) => `<div class="phase" data-phase="${esc(p.id)}">
-      <img alt="" loading="lazy" src="${spriteURL(p.data.speciesId, true)}">
+      ${spriteImg(p.data.speciesId, true, 'loading="lazy"')}
       <div class="meta"><b>${esc(speciesName(p.data.speciesId))}</b>
         <small>at encounter ${(p.data.encountersAtPhase || 0).toLocaleString()} · ${new Date(p.data.endedAt).toLocaleDateString()}</small>
         ${p.data.notes ? `<small>${esc(p.data.notes)}</small>` : ''}</div>
@@ -679,7 +719,7 @@ function renderHunts() {
   };
 
   const mini = (h, button) => `<div class="mini" data-id="${esc(h.id)}">
-      <img alt="" src="${spriteURL(h.data.speciesId, true)}">
+      ${spriteImg(h.data.speciesId, true, 'loading="lazy"')}
       <div class="meta">${esc(speciesName(h.data.speciesId))}
         <small>${(h.data.encounters || 0).toLocaleString()} encounters · ${esc(h.data.method)}</small></div>
       ${button}
@@ -768,7 +808,7 @@ function makeSpeciesPicker(input, results, onPick = () => {}) {
       const matches = SPECIES.filter((s) => s.name.toLowerCase().includes(q) || String(s.id) === q).slice(0, 20);
       results.innerHTML = matches.map((s) =>
         `<button type="button" data-id="${s.id}" class="${s.id === picker.picked ? 'on' : ''}">` +
-        `<img alt="" loading="lazy" src="${spriteURL(s.id, true)}">${esc(s.name)} <span class="muted">${dexNum(s)}</span></button>`).join('')
+        `${spriteImg(s.id, true, 'loading="lazy"')}${esc(s.name)} <span class="muted">${dexNum(s)}</span></button>`).join('')
         || '<p class="muted">No Pokémon by that name.</p>';
     },
     // Accept an exact typed name even if no result was tapped.
@@ -1013,9 +1053,26 @@ function wireEvents() {
     savePrefs();
     renderDex();
   }));
-  for (const [sel, key] of [['#gen-filter', 'gen'], ['#type-filter', 'type'], ['#status-filter', 'status'], ['#tag-filter', 'tag']]) {
-    $(sel).addEventListener('change', (e) => { prefs[key] = e.target.value; savePrefs(); renderDex(); });
-  }
+  // Filters sheet
+  $('#filter-btn').addEventListener('click', () => { renderFilterSheet(); $('#filter-dlg').showModal(); });
+  $('#filter-groups').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-v]');
+    if (!b) return;
+    const key = b.closest('[data-key]').dataset.key;
+    // Tapping the selected choice again goes back to All.
+    prefs[key] = b.dataset.v === String(prefs[key]) ? 'all' : (key === 'gen' && b.dataset.v !== 'all' ? Number(b.dataset.v) : b.dataset.v);
+    savePrefs();
+    renderFilterSheet();
+    renderDex();
+  });
+  $('#filter-reset').addEventListener('click', () => {
+    Object.assign(prefs, { gen: 'all', type: 'all', status: 'all', tag: 'all' });
+    savePrefs();
+    renderFilterSheet();
+    renderDex();
+  });
+  $('#filter-done').addEventListener('click', () => $('#filter-dlg').close());
+  $('#filter-dlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
   $('#dex-search').addEventListener('input', (e) => { search = e.target.value; renderDex(); });
   const grid = $('#dex-grid');
   grid.addEventListener('click', onDexTap);
@@ -1034,10 +1091,11 @@ function wireEvents() {
     const b = e.target.closest('[data-badge]');
     if (b) toggleBadge(b.dataset.badge);
   });
-  $('#badge-strip').addEventListener('toggle', (e) => {
-    prefs.badgesOpen = e.target.open;
+  $('#badge-pill').addEventListener('click', () => {
+    prefs.badgesExpanded = !prefs.badgesExpanded;
     savePrefs();
-  }, true);
+    renderBadges();
+  });
 
   // Detail sheet
   $('#detail-body').addEventListener('click', onDetailClick);
@@ -1136,6 +1194,12 @@ function wireEvents() {
   // Account
   $('#sync-btn').addEventListener('click', () => { renderAccount(); $('#account-dlg').showModal(); });
   $('#sync-now').addEventListener('click', () => syncNow());
+  document.querySelectorAll('[data-sprites]').forEach((b) => b.addEventListener('click', () => {
+    prefs.spriteStyle = b.dataset.sprites;
+    savePrefs();
+    applySpriteStyle();
+    render();
+  }));
   $('#sign-out').addEventListener('click', async () => {
     if (store.pending.size && !confirm('Some changes haven\'t uploaded yet. Sign out anyway and lose them?')) return;
     $('#account-dlg').close();
@@ -1172,6 +1236,15 @@ function wireEvents() {
   window.addEventListener('online', () => syncNow());
 }
 
+function applySpriteStyle() {
+  document.body.dataset.sprites = prefs.spriteStyle;
+  document.querySelectorAll('[data-sprites]').forEach((b) => {
+    if (b.tagName !== 'BUTTON') return;
+    b.classList.toggle('on', b.dataset.sprites === prefs.spriteStyle);
+    b.setAttribute('aria-pressed', b.dataset.sprites === prefs.spriteStyle);
+  });
+}
+
 function fillStaticSelects() {
   const groups = [];
   for (const g of GAMES) {
@@ -1198,6 +1271,21 @@ async function boot() {
   GAMES = games;
   fillStaticSelects();
   wireEvents();
+  applySpriteStyle();
+  document.querySelectorAll('.tabbar [data-icon]').forEach((b) => b.insertAdjacentHTML('afterbegin', icon(b.dataset.icon)));
+  $('#search-icon').innerHTML = icon('search');
+  $('#filter-icon').innerHTML = icon('filter');
+  // The long-press tip shows on the first visit only.
+  $('#dex-hint').hidden = !!prefs.hintSeen;
+  if (!prefs.hintSeen) { prefs.hintSeen = true; savePrefs(); }
+  // A HOME sprite that's missing (some forms) falls back to the pixel sprite.
+  document.addEventListener('error', (e) => {
+    const img = e.target;
+    if (img.tagName === 'IMG' && img.dataset.fallback && img.src !== img.dataset.fallback) {
+      img.src = img.dataset.fallback;
+      img.classList.add('pixel');
+    }
+  }, true);
 
   auth.onAuthStateChanged((user) => {
     if (user && user.uid !== store.userId) enterApp(user);
