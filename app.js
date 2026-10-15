@@ -149,6 +149,46 @@ function spriteURL(id, shiny, large = false) {
 }
 const spriteImg = (id, shiny, attrs = '', large = false) =>
   `<img ${attrs} alt="" draggable="false" src="${spriteURL(id, shiny, large)}" data-fallback="${pixelSpriteURL(id, shiny)}">`;
+// Skip the DOM write when the markup hasn't changed.
+function setHTML(el, html) {
+  if (el._html === html) return;
+  el.innerHTML = html;
+  el._html = html;
+}
+
+// Update a list in place from [{key, html}]: unchanged items keep their node,
+// changed ones are rebuilt but keep their already-loaded sprites (and open
+// <details>), so tapping a cell doesn't make the whole list blink.
+function morphChildren(container, items) {
+  const old = new Map();
+  for (const el of container.children) if (el._key != null) old.set(el._key, el);
+  const tpl = document.createElement('template');
+  const next = items.map(({ key, html }) => {
+    const prev = old.get(key);
+    if (prev && prev._html === html) return prev;
+    tpl.innerHTML = html;
+    const el = tpl.content.firstElementChild;
+    el._key = key;
+    el._html = html;
+    if (prev) {
+      const imgs = new Map([...prev.querySelectorAll('img')].map((i) => [i.dataset.src || i.getAttribute('src'), i]));
+      for (const img of el.querySelectorAll('img')) {
+        const keep = imgs.get(img.getAttribute('src'));
+        if (keep) { imgs.delete(img.getAttribute('src')); img.replaceWith(keep); }
+      }
+      const wasOpen = [...prev.querySelectorAll('details'), prev].filter((d) => d.tagName === 'DETAILS').map((d) => d.open);
+      [...el.querySelectorAll('details'), el].filter((d) => d.tagName === 'DETAILS').forEach((d, i) => { if (wasOpen[i]) d.open = true; });
+    }
+    return el;
+  });
+  const kids = [...container.children];
+  if (kids.length === next.length && next.every((el, i) => kids[i] === el || !el.isConnected)) {
+    next.forEach((el, i) => { if (kids[i] !== el) kids[i].replaceWith(el); });
+  } else {
+    container.replaceChildren(...next);
+  }
+}
+
 const dexNum = (sp) => '#' + String(sp.baseSpeciesId ?? sp.id).padStart(4, '0');
 const speciesName = (id) => SPECIES_BY_ID.get(id)?.name ?? `#${id}`;
 const gameGroup = (g) => (g.releaseGen === 'cross' ? 'Cross-Game' : `Gen ${g.releaseGen}`);
@@ -427,8 +467,8 @@ function currentGame() {
 
 function renderGameButton() {
   const game = currentGame();
-  $('#game-btn').innerHTML = `<span class="game-logos">${gameLogos(game.id)}</span>` +
-    `<span class="game-name">${esc(game.name)}</span><span class="caret">▾</span>`;
+  setHTML($('#game-btn'), `<span class="game-logos">${gameLogos(game.id)}</span>` +
+    `<span class="game-name">${esc(game.name)}</span><span class="caret">▾</span>`);
   $('#game-btn').setAttribute('aria-label', `Game: ${game.name}. Change game`);
 }
 
@@ -468,9 +508,9 @@ function renderDexControls() {
   const pts = live('playthrough').filter((r) => r.data.gameId === game.id)
     .sort((a, b) => a.data.createdAt.localeCompare(b.data.createdAt));
   if (prefs.playthroughId && !pts.some((r) => r.id === prefs.playthroughId)) prefs.playthroughId = '';
-  $('#pt-select').innerHTML = '<option value="">Main</option>' +
+  setHTML($('#pt-select'), '<option value="">Main</option>' +
     pts.map((r) => `<option value="${esc(r.id)}">${esc(r.data.name)}</option>`).join('') +
-    '<option value="__new">＋ New playthrough…</option>';
+    '<option value="__new">＋ New playthrough…</option>');
   $('#pt-select').value = prefs.playthroughId;
 
   // Filter choices for this game (shown in the Filters sheet).
@@ -492,7 +532,7 @@ function renderDexControls() {
     const on = b.dataset.mode === prefs.mode;
     b.classList.toggle('on', on);
     b.setAttribute('aria-pressed', on);
-    b.innerHTML = icon(ic) + (on ? `<span>${label}</span>` : '');
+    setHTML(b, icon(ic) + (on ? `<span>${label}</span>` : ''));
   });
 
   // "In:" version picker for paired games.
@@ -501,8 +541,8 @@ function renderDexControls() {
   // Long names (Brilliant Diamond, LeafGreen…) use initials for every version in that game.
   const shortLabels = vs.some((v) => v.label.length > 8);
   $('#version-row').hidden = !vs.length || prefs.mode === 'info';
-  $('#version-row').innerHTML = vs.length ? '<span class="muted">In</span>' + vs.map((v) =>
-    `<button data-version="${v.id}" class="${v.id === activeV ? 'on' : ''}" style="--vc:${v.color}" aria-pressed="${v.id === activeV}" title="${esc(v.label)}">${esc(shortLabels ? VERSION_SHORT[v.id] || v.label : v.label)}</button>`).join('') : '';
+  setHTML($('#version-row'), vs.length ? '<span class="muted">In</span>' + vs.map((v) =>
+    `<button data-version="${v.id}" class="${v.id === activeV ? 'on' : ''}" style="--vc:${v.color}" aria-pressed="${v.id === activeV}" title="${esc(v.label)}">${esc(shortLabels ? VERSION_SHORT[v.id] || v.label : v.label)}</button>`).join('') : '');
 }
 
 // Choices per filter group for a game: [value, label][] each.
@@ -551,17 +591,17 @@ function renderBadges() {
   const earned = new Set(live('badge').filter((r) => r.data.gameId === game.id && (r.data.playthroughId || '') === pt)
     .map((r) => r.data.badgeId));
   const count = list.filter((b) => earned.has(b.id)).length;
-  pill.innerHTML = `${icon('badge')}${count} / ${list.length}`;
+  setHTML(pill, `${icon('badge')}${count} / ${list.length}`);
   pill.setAttribute('aria-expanded', prefs.badgesExpanded);
   pill.setAttribute('aria-label', `Badges: ${count} of ${list.length}. ${prefs.badgesExpanded ? 'Hide' : 'Show'} badges`);
   if (el.hidden) return;
   const groups = BADGE_CATEGORIES.map((cat) => [cat, list.filter((b) => (b.category || 'Gym') === cat)]).filter(([, l]) => l.length);
-  el.innerHTML = groups.map(([cat, l]) => `<div class="badge-group">${groups.length > 1 ? `<span class="badge-cat">${cat}</span>` : ''}` +
+  setHTML(el, groups.map(([cat, l]) => `<div class="badge-group">${groups.length > 1 ? `<span class="badge-cat">${cat}</span>` : ''}` +
     l.map((b) => {
       const on = earned.has(b.id);
       return `<button class="gym ${on ? 'on' : ''}" data-badge="${esc(b.id)}" aria-pressed="${on}"` +
         `${on ? ` style="background:${TYPE_COLORS[b.type] || '#888'}"` : ''} title="${esc(b.name)} (${b.type})">${esc(b.name)}</button>`;
-    }).join('') + '</div>').join('');
+    }).join('') + '</div>').join(''));
 }
 
 function toggleBadge(badgeId) {
@@ -589,10 +629,10 @@ function renderDex() {
   const shinyCount = dexSpecies.filter((s) => has(s.id, true)).length;
   const pct = dexSpecies.length ? Math.round((caughtCount / dexSpecies.length) * 100) : 0;
   const perVersion = vs.map((v) => `${dexSpecies.filter((s) => versionsFor(s.id, false).includes(v.id)).length} ${esc(v.label)}`).join(' · ');
-  $('#dex-progress').innerHTML =
+  setHTML($('#dex-progress'),
     `${caughtCount} / ${dexSpecies.length} caught (${pct}%) · ${shinyCount} shiny` +
     (vs.length ? `<span class="per-version">${perVersion}</span>` : '') +
-    `<div class="bar"><i style="width:${pct}%"></i></div>`;
+    `<div class="bar"><i style="width:${pct}%"></i></div>`);
 
   const q = search.trim().toLowerCase();
   const target = prefs.mode === 'shiny';
@@ -623,18 +663,18 @@ function renderDex() {
     return true;
   });
 
-  $('#dex-grid').innerHTML = list.length ? list.map((s) => {
+  morphChildren($('#dex-grid'), list.length ? list.map((s) => {
     const caught = has(s.id, false);
     const shiny = has(s.id, true);
     const cls = ['cell', caught && 'caught', shiny && 'shiny'].filter(Boolean).join(' ');
-    return `<button class="${cls}" data-id="${s.id}" aria-pressed="${target ? shiny : caught}">` +
+    return { key: s.id, html: `<button class="${cls}" data-id="${s.id}" aria-pressed="${target ? shiny : caught}">` +
       `${shiny ? `<span class="badge" title="Shiny owned">${icon('shiny')}</span>` : ''}` +
       `${recs.get(s.id)?.notes ? `<span class="note-dot" title="Has notes">${icon('note')}</span>` : ''}` +
       spriteImg(s.id, shiny, 'loading="lazy" decoding="async"') +
       `<span class="num">${dexNum(s)}</span><span class="name">${esc(s.name)}</span>` +
       (vs.length ? `<span class="vtags">${exclusiveTag(game.id, s.id)}${versionsFor(s.id, target).map((v) => versionTag(game.id, v)).join('')}</span>` : '') +
-      `</button>`;
-  }).join('') : '<p class="empty">Nothing matches these filters.</p>';
+      `</button>` };
+  }) : [{ key: 'empty', html: '<p class="empty">Nothing matches these filters.</p>' }]);
 }
 
 // Long-press (touch) or right-click (mouse) on a cell opens its detail sheet.
@@ -668,6 +708,7 @@ function onDexTap(e) {
   if (added) {
     const fresh = $(`#dex-grid .cell[data-id="${id}"]`);
     fresh?.classList.add('pop');
+    fresh?.addEventListener('animationend', () => fresh.classList.remove('pop'), { once: true });
   }
 }
 
@@ -743,10 +784,11 @@ function renderHunts() {
       ${button}
     </div>`;
 
-  $('#hunt-list').innerHTML =
-    (active.length ? active.map(card).join('') : '<p class="empty">No active hunts. Start one above.</p>') +
-    (done.length ? `<details class="archive"><summary>Caught (${done.length})</summary>${done.map((h) => mini(h, '')).join('')}</details>` : '') +
-    (abandoned.length ? `<details class="archive"><summary>Abandoned (${abandoned.length})</summary>${abandoned.map((h) => mini(h, '<button data-act="resurrect">Resurrect</button>')).join('')}</details>` : '');
+  morphChildren($('#hunt-list'), [
+    ...(active.length ? active.map((h) => ({ key: h.id, html: card(h) })) : [{ key: 'empty', html: '<p class="empty">No active hunts. Start one above.</p>' }]),
+    ...(done.length ? [{ key: 'done', html: `<details class="archive"><summary>Caught (${done.length})</summary>${done.map((h) => mini(h, '')).join('')}</details>` }] : []),
+    ...(abandoned.length ? [{ key: 'abandoned', html: `<details class="archive"><summary>Abandoned (${abandoned.length})</summary>${abandoned.map((h) => mini(h, '<button data-act="resurrect">Resurrect</button>')).join('')}</details>` }] : []),
+  ]);
 }
 
 let countHuntId = null;
@@ -1303,6 +1345,7 @@ async function boot() {
   document.addEventListener('error', (e) => {
     const img = e.target;
     if (img.tagName === 'IMG' && img.dataset.fallback && img.src !== img.dataset.fallback) {
+      img.dataset.src = img.getAttribute('src');
       img.src = img.dataset.fallback;
       img.classList.add('pixel');
     }
