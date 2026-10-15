@@ -468,3 +468,9 @@ dialog.sheet.bottom {
 .tint-red .tl-icon { color: var(--accent); }
 .card h2 .ico { margin-right: 6px; color: var(--accent); }
 #filter-groups { display: grid; gap: 16px; }
+
+/* Version-exclusive marker: outlined, unlike the filled "caught in" tags. */
+.xtag {
+  font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 999px;
+  border: 1.5px solid var(--vc); color: var(--vc); background: var(--card); line-height: 1.5;
+}

@@ -11,7 +11,8 @@ Files: `icons.js` (icon set), `app.js` (sync, dex, hunts, stats, auth), `detail.
 Live at https://krburchel.github.io/pokemontracker/
 
 - `data/species.json`, `data/games.json` are copied from the Mac app's Resources; `data/badges.json` is
-  generated from its `Services/GymData.swift`. Re-copy when those change.
+  generated from its `Services/GymData.swift`. Re-copy when those change. `data/exclusives.json` (version exclusives) comes from the Mac
+  project's `scripts/fetch_exclusives.py`.
 - Catches in paired games may carry `versions: ["scarlet", ...]` (ids in `VERSIONS` in app.js, same as the
   Mac app's exclusives.json); the Mac app stores them as `versionsRaw`.
 - Record payloads (the `json` field) must match `SyncDTO` in the Mac app's `Services/SyncEngine.swift`.

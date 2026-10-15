@@ -204,7 +204,7 @@ function renderOwnership() {
     return `<div class="own ${shi ? 'has-shiny' : reg ? 'has-reg' : ''}" data-game="${g.id}">
       <div class="own-row">
         <span class="own-game">${esc(g.shortName)}${ptName ? ` <small>· ${esc(ptName)}</small>` : ''}` +
-          `<span class="own-tags">${[...new Set([...(reg?.data.versions || []), ...(shi?.data.versions || [])])].map((v) => versionTag(g.id, v)).join('')}</span></span>
+          `<span class="own-tags">${exclusiveTag(g.id, sp.id)}${[...new Set([...(reg?.data.versions || []), ...(shi?.data.versions || [])])].map((v) => versionTag(g.id, v)).join('')}</span></span>
         <button class="pill ${reg ? 'on' : ''}" data-act="own" data-shiny="0" aria-pressed="${!!reg}">${icon('caught')}Regular</button>
         <button class="pill shiny ${shi ? 'on' : ''}" data-act="own" data-shiny="1" aria-pressed="${!!shi}">${icon('shiny')}Shiny</button>
         ${reg || shi ? `<button class="ghost chev" data-act="expand" aria-label="Notes, tags, date">${open ? '▴' : '▾'}</button>` : '<span class="chev"></span>'}
