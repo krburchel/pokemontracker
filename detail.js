@@ -179,7 +179,7 @@ function renderDetail() {
         <figure>${spriteImg(sp.id, true, '', true)}<figcaption>Shiny</figcaption></figure>
       </div>
       <h2>${esc(sp.name)} <button class="ghost cry" data-act="cry" aria-label="Play cry">${icon('sound')}</button></h2>
-      <div class="muted">${dexNum(sp)} · Gen ${sp.generation}</div>
+      <div class="muted">National ${dexNum(sp)}${DEX_NUMS[prefs.gameId]?.nums[sp.id] ? ` · ${gameDexNum(prefs.gameId, sp, true)}` : ''} · Gen ${sp.generation}</div>
       <div class="types">${sp.types.map(typeBadge).join('')}</div>
     </div>
     <section class="detail-sec"><h3>Your collection</h3><div id="detail-own"></div></section>
