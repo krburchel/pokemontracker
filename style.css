@@ -96,8 +96,10 @@ select, input[type=search], input[type=email], input[type=password], input[type=
 .topbar h1 { font-size: 22px; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .logo { width: 30px; height: 30px; flex: 0 0 auto; filter: drop-shadow(0 1px 2px rgb(0 0 0 / .2)); }
-.sync-btn { background: transparent; padding: 8px; }
-.dot { display: block; width: 12px; height: 12px; border-radius: 50%; background: var(--caught); }
+/* Settings button: a gear with the sync status as a small dot on its corner. */
+.sync-btn { position: relative; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; background: transparent; color: var(--muted); }
+.sync-btn .ico { width: 24px; height: 24px; }
+.dot { position: absolute; top: 5px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: var(--caught); box-shadow: 0 0 0 2px var(--bg); }
 .dot.busy { background: var(--shiny); }
 .dot.err { background: var(--accent); }
 
@@ -231,9 +233,6 @@ dialog label.check input { width: auto; }
 .or { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: var(--muted); font-size: 13px; }
 .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 button.google { width: 100%; border: 1px solid var(--line); font-weight: 600; }
-.mac-pw { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; font-size: 14px; }
-.mac-pw form { display: grid; gap: 8px; }
-.mac-pw input[readonly] { color: var(--muted); }
 
 /* ---- Dex extras ---------------------------------------------------------- */
 .hint { margin: 0; font-size: 12px; color: var(--muted); }
@@ -342,8 +341,6 @@ dialog textarea { font: inherit; width: 100%; border: 1px solid var(--line); bor
 .tint-orange .tl-icon { color: #f97316; }
 .tint-purple .tl-icon { color: #8b5cf6; }
 #timeline-more { margin-top: 12px; }
-
-.mac-pw summary { cursor: pointer; color: var(--muted); }
 
 @media (max-width: 440px) {
   .mode-row { flex-wrap: wrap; }
@@ -466,15 +463,20 @@ dialog.sheet.bottom {
 .sheet-actions .primary { background: var(--accent); }
 
 /* Backup in the account dialog */
-.backup { border-top: 1px solid var(--line); padding-top: 12px; font-size: 14px; }
+.backup { font-size: 14px; }
 .backup-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; }
 .backup-head small { font-size: 12px; }
-.backup-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
-.backup-actions button { background: var(--bg); font-size: 14px; padding: 10px 8px; }
 .backup .msg { margin: 6px 0 0; font-size: 13px; overflow-wrap: anywhere; }
 
 /* Settings row in the account dialog */
-.setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0 12px; font-size: 14px; }
+.setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; }
+.set-sec { border-top: 1px solid var(--line); padding: 12px 0; font-size: 14px; }
+.set-sec:first-of-type { border-top: 0; padding-top: 0; }
+.set-sec p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.set-head { font-weight: 600; }
+.set-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.set-actions button { background: var(--bg); font-size: 14px; padding: 10px 8px; }
+#account-status.err { color: var(--accent); }
 .setting .seg button { padding: 6px 12px; font-size: 13px; background: transparent; color: var(--muted); }
 .setting .seg button.on { background: var(--accent); color: #fff; }
 
@@ -511,3 +513,41 @@ dialog.sheet.bottom {
   font-size: 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25);
 }
 .toast button { background: var(--bg); color: var(--text); padding: 6px 12px; font-weight: 600; flex: none; }
+
+/* The toast sits just above the Filters sheet's buttons when it's shown inside that sheet. */
+.toast { text-align: left; }
+
+/* ---- Box view --------------------------------------------------------------- */
+#view-btn { padding: 8px 10px; }
+#view-btn.active { border-color: var(--accent); color: var(--accent); }
+.grid.boxes { grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; }
+.box {
+  background: var(--card); border-radius: var(--radius); padding: 10px;
+  content-visibility: auto; contain-intrinsic-size: auto 330px auto 330px;
+}
+.box header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; font-size: 13px; color: var(--muted); }
+.box header b { font-family: var(--display); font-size: 15px; color: var(--text); }
+.box header .box-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.box.full header .box-count { color: var(--caught); font-weight: 600; }
+.box-grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 4px; }
+.cell.bcell { padding: 2px; border-radius: 10px; background: var(--bg); content-visibility: visible; contain-intrinsic-size: none; }
+.cell.bcell.caught { background: var(--caught-soft); }
+.cell.bcell img { width: 100%; height: auto; aspect-ratio: 1; max-width: 64px; }
+.cell.bcell .badge { top: 1px; right: 2px; }
+.cell.bcell .badge .ico { width: 11px; height: 11px; }
+.cell.bcell.off { opacity: .15; pointer-events: none; }
+
+/* ---- Mark / unmark everything shown (Filters sheet) --------------------------- */
+.bulk-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.bulk-actions button { background: var(--bg); font-size: 14px; padding: 10px 12px; }
+.bulk-actions button:disabled { opacity: .45; cursor: default; }
+
+/* ---- Hunts with a keyboard ---------------------------------------------------- */
+.hunt.keyed { box-shadow: inset 0 0 0 2px var(--accent); }
+#hunt-hint { margin: -4px 0 12px; text-align: center; }
+
+/* ---- Stats ------------------------------------------------------------------ */
+.missing { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.missing button { padding: 2px; background: var(--bg); border-radius: 10px; }
+.missing img { display: block; width: 44px; height: 44px; }
+.idle-games summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 10px 0 2px; border-top: 1px solid var(--line); }

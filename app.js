@@ -159,17 +159,24 @@ const spriteImg = (id, shiny, attrs = '', large = false) => {
   const src = spriteURL(id, shiny, large);
   return `<img ${attrs} alt="" draggable="false"${src.startsWith(SPRITE_CDN) ? ' crossorigin="anonymous"' : ''} src="${src}" data-fallback="${pixelSpriteURL(id, shiny)}">`;
 };
-// One-line message above the tab bar, with an optional action button. Stays up
-// until tapped when it has an action, otherwise fades after a few seconds.
+// One-line message above the tab bar, with an optional action button. With an
+// action it stays until tapped unless a timeout is given; without one it fades.
 let toastTimer = null;
-function showToast(text, action = null, onAction = null) {
+function showToast(text, action = null, onAction = null, timeout = action ? 0 : 8000) {
   const el = $('#toast');
   if (!el) return;
   clearTimeout(toastTimer);
+  // An open dialog makes everything outside it untappable, so the toast moves inside it.
+  const host = [...document.querySelectorAll('dialog[open]')].pop() || document.body;
+  if (el.parentNode !== host) host.append(el);
   el.innerHTML = `<span>${esc(text)}</span>` + (action ? `<button type="button">${esc(action)}</button>` : '');
   el.hidden = false;
-  if (action) el.querySelector('button').addEventListener('click', () => { el.hidden = true; onAction(); });
-  else toastTimer = setTimeout(() => { el.hidden = true; }, 8000);
+  if (action) el.querySelector('button').addEventListener('click', () => { hideToast(); onAction(); });
+  if (timeout) toastTimer = setTimeout(hideToast, timeout);
+}
+function hideToast() {
+  clearTimeout(toastTimer);
+  $('#toast').hidden = true;
 }
 
 // Skip the DOM write when the markup hasn't changed.
@@ -546,7 +553,15 @@ function describeError(e) {
   return msg;
 }
 
+// A sync problem is announced once, not on every retry, until a sync gets through.
+let errorToasted = false;
 function setStatus(status, error = '') {
+  if (status === 'error' && !errorToasted && !$('#app').hidden) {
+    errorToasted = true;
+    showToast(error);
+  } else if (status === 'idle' && !store.pending.size) {
+    errorToasted = false;
+  }
   store.status = status;
   store.error = error;
   const dot = $('#sync-dot');
@@ -589,37 +604,57 @@ function catchIndex() {
   return byKey;
 }
 
-// Without `version`: caught ⇄ not caught. With `version` (paired games):
-// toggles just that copy — adding it to an existing catch, or deleting the
-// catch when it was the last copy marked.
-function toggleCatch(speciesId, gameId, isShiny, playthroughId, index, version = null) {
+// The writes for one tap. Without `version`: caught ⇄ not caught. With `version`
+// (paired games): toggles just that copy — adding it to an existing catch, or
+// deleting the catch when it was the last copy marked. `added` says which way it went.
+function catchToggleWrites(speciesId, gameId, isShiny, playthroughId, index, version = null) {
   const key = catchKey({ speciesId, gameId, isShiny, playthroughId });
   const existing = index.get(key);
+  const del = (r) => ({ kind: 'catch', id: r.id, data: r.data, deleted: true });
   if (existing?.length) {
     if (version) {
-      const [first, ...dupes] = existing;
+      const first = existing[0];
       const versions = first.data.versions || [];
       if (!versions.includes(version)) {
-        write('catch', first.id, { ...first.data, versions: [...versions, version] });
-        return true;
+        return { added: true, writes: [{ kind: 'catch', id: first.id, data: { ...first.data, versions: [...versions, version] } }] };
       }
       const left = versions.filter((v) => v !== version);
-      if (left.length) {
-        write('catch', first.id, { ...first.data, versions: left });
-        return false;
-      }
-      for (const r of dupes) write('catch', r.id, r.data, true);
-      write('catch', first.id, first.data, true);
-      return false;
+      if (left.length) return { added: false, writes: [{ kind: 'catch', id: first.id, data: { ...first.data, versions: left } }] };
     }
-    for (const r of existing) write('catch', r.id, r.data, true);
-    return false;
+    return { added: false, writes: existing.map(del) };
   }
-  write('catch', uuid(), {
+  return { added: true, writes: [{ kind: 'catch', id: uuid(), data: {
     speciesId, gameId, isShiny, playthroughId: playthroughId || null,
     notes: '', tagsRaw: '', caughtAt: nowISO(), ...(version ? { versions: [version] } : {}),
+  } }] };
+}
+
+function toggleCatch(...args) {
+  const { added, writes } = catchToggleWrites(...args);
+  writeMany(writes);
+  return added;
+}
+
+// Makes `writes` and offers Undo, which puts every touched record back as it is now.
+function writeWithUndo(writes, message, timeout = 6000) {
+  const undo = writes.map((w) => {
+    const prev = store.rows.get(w.id);
+    return prev && !prev.deleted ? { kind: prev.kind, id: prev.id, data: prev.data, deleted: false }
+      : { kind: w.kind, id: w.id, data: w.data, deleted: true };
   });
-  return true;
+  writeMany(writes);
+  showToast(message, 'Undo', () => { writeMany(undo); render(); }, timeout);
+}
+
+// A tap on the dex or a detail-sheet pill. Removing a catch also removes its
+// notes, tags and date, so that direction gets an Undo.
+function tapCatch(speciesId, gameId, isShiny, playthroughId, version = null) {
+  const { added, writes } = catchToggleWrites(speciesId, gameId, isShiny, playthroughId, catchIndex(), version);
+  if (added) { writeMany(writes); return true; }
+  const onlyVersion = version && !writes.some((w) => w.deleted);
+  const label = versionsOf(gameId).find((v) => v.id === version)?.label;
+  writeWithUndo(writes, `Removed ${isShiny ? 'shiny ' : ''}${speciesName(speciesId)}${onlyVersion ? ` from ${label}` : ''}`);
+  return false;
 }
 
 // Port of OddsCalculator.swift.
@@ -653,7 +688,7 @@ function huntOdds(h) {
 const prefs = Object.assign({
   tab: 'dex', gameId: 'home', playthroughId: '', mode: 'regular',
   gen: 'all', type: 'all', status: 'all', tag: 'all', excl: 'all', lastCaughtGame: 'sv', versionByGame: {},
-  reviewYear: null, badgesExpanded: false, spriteStyle: 'home', hintSeen: false, lastBackupAt: null,
+  reviewYear: null, badgesExpanded: false, spriteStyle: 'home', hintSeen: false, lastBackupAt: null, view: 'grid',
 }, readJSON(PREFS_KEY) || {});
 const savePrefs = () => writeJSON(PREFS_KEY, prefs);
 let search = '';
@@ -679,6 +714,7 @@ function showTab(tab) {
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#title').textContent = TITLES[tab];
   render();
+  updateWake();
   window.scrollTo(0, 0);
 }
 
@@ -835,6 +871,91 @@ function toggleBadge(badgeId) {
   renderBadges();
 }
 
+// ---- Boxes -------------------------------------------------------------------
+// Box view lays the dex out the way it's stored in the game: 30 to a box, six
+// across (Gen 2: 20, five across). GO and Let's Go have no boxes.
+function boxLayout(gameId) {
+  if (gameId === 'pogo' || gameId === 'letsgo') return null;
+  return gameId === 'gsc' ? { size: 20, cols: 5 } : { size: 30, cols: 6 };
+}
+
+// A game's boxes in order: [{n, label, species}]. Each game uses its own dex
+// order. HOME keeps National Dex order with regional forms in their own boxes
+// at the end, so a Pokémon's box is its number divided by 30.
+function boxesOf(game) {
+  const layout = boxLayout(game.id);
+  if (!layout) return [];
+  const all = game.species.map((id) => SPECIES_BY_ID.get(id)).filter(Boolean);
+  const isForm = (sp) => (sp.baseSpeciesId ?? sp.id) !== sp.id;
+  const sections = game.id === 'home'
+    ? [[null, all.filter((sp) => !isForm(sp))], ['Regional forms', all.filter(isForm)]]
+    : [[null, all]];
+  const out = [];
+  for (const [label, list] of sections) {
+    for (let i = 0; i < list.length; i += layout.size) {
+      out.push({ n: out.length + 1, label, species: list.slice(i, i + layout.size) });
+    }
+  }
+  return out;
+}
+
+function boxPosition(gameId, speciesId) {
+  const game = GAMES.find((g) => g.id === gameId);
+  const layout = game && boxLayout(gameId);
+  if (!layout) return null;
+  for (const box of boxesOf(game)) {
+    const i = box.species.findIndex((sp) => sp.id === speciesId);
+    if (i >= 0) return { box: box.n, row: Math.floor(i / layout.cols) + 1, slot: (i % layout.cols) + 1 };
+  }
+  return null;
+}
+
+// ---- Mark or unmark everything shown -------------------------------------------
+let dexShown = [];   // the Pokémon the dex is showing after filters and search
+
+// What marking (or unmarking) every shown Pokémon would write, in the current
+// mode (caught / shiny) and, for paired games, the selected version.
+function bulkPlan(mark) {
+  const game = currentGame();
+  const pt = prefs.playthroughId || null;
+  const shiny = prefs.mode === 'shiny';
+  const version = activeVersion(game.id);
+  const index = catchIndex();
+  const writes = [];
+  let n = 0;
+  for (const sp of dexShown) {
+    const recs = index.get(catchKey({ speciesId: sp.id, gameId: game.id, isShiny: shiny, playthroughId: pt }));
+    const owned = version ? !!recs?.[0]?.data.versions?.includes(version) : !!recs?.length;
+    if (owned === mark) continue;
+    writes.push(...catchToggleWrites(sp.id, game.id, shiny, pt, index, version).writes);
+    n++;
+  }
+  const label = versionsOf(game.id).find((v) => v.id === version)?.label;
+  return { n, writes, what: `${shiny ? 'shiny' : 'caught'}${label ? ` in ${label}` : ''}` };
+}
+
+function renderBulk() {
+  const mark = bulkPlan(true);
+  const clear = bulkPlan(false);
+  setHTML($('#filter-bulk'), `<h3>All ${dexShown.length.toLocaleString()} shown</h3><div class="bulk-actions">` +
+    `<button type="button" data-bulk="mark" ${mark.n ? '' : 'disabled'}>Mark ${mark.n.toLocaleString()} ${esc(mark.what)}</button>` +
+    `<button type="button" data-bulk="clear" ${clear.n ? '' : 'disabled'}>Unmark ${clear.n.toLocaleString()}</button></div>`);
+}
+
+function onBulkTap(e) {
+  const btn = e.target.closest('[data-bulk]');
+  if (!btn) return;
+  const mark = btn.dataset.bulk === 'mark';
+  const plan = bulkPlan(mark);
+  if (!plan.n) return;
+  const count = `${plan.n.toLocaleString()} Pokémon`;
+  if (!confirm(mark ? `Mark ${count} as ${plan.what}?`
+    : `Unmark ${count} (${plan.what})? Their notes, tags and catch dates go too.`)) return;
+  $('#filter-dlg').close();   // so the result, and the Undo, are in view
+  writeWithUndo(plan.writes, mark ? `Marked ${count} as ${plan.what}` : `Unmarked ${count}`, 15000);
+  renderDex();
+}
+
 function renderDex() {
   renderDexControls();
   renderBadges();
@@ -892,7 +1013,42 @@ function renderDex() {
     return true;
   });
 
-  morphChildren($('#dex-grid'), list.length ? list.map((s) => {
+  dexShown = list;
+  if ($('#filter-dlg').open) renderBulk();
+  const layout = boxLayout(game.id);
+  const boxed = prefs.view === 'boxes' && !!layout;
+  const viewBtn = $('#view-btn');
+  viewBtn.hidden = !layout;
+  viewBtn.classList.toggle('active', boxed);
+  viewBtn.setAttribute('aria-pressed', boxed);
+  const grid = $('#dex-grid');
+  grid.classList.toggle('boxes', boxed);
+  const nothing = [{ key: 'empty', html: '<p class="empty">Nothing matches these filters.</p>' }];
+
+  if (boxed) {
+    // Every Pokémon keeps its slot; ones the filters hide are faded, and boxes with no match are left out.
+    const match = new Set(list.map((s) => s.id));
+    const items = [];
+    for (const box of boxesOf(game)) {
+      if (!box.species.some((s) => match.has(s.id))) continue;
+      const got = box.species.filter((s) => has(s.id, target)).length;
+      const range = box.label || `${gameDexNum(game.id, box.species[0])} – ${gameDexNum(game.id, box.species[box.species.length - 1])}`;
+      items.push({ key: `box-${box.n}`, html: `<section class="box${got === box.species.length ? ' full' : ''}">` +
+        `<header><b>Box ${box.n}</b><span>${esc(range)}</span><span class="box-count">${got} / ${box.species.length}</span></header>` +
+        `<div class="box-grid" style="--cols:${layout.cols}">` + box.species.map((s) => {
+          const caught = has(s.id, false);
+          const shiny = has(s.id, true);
+          const cls = ['cell', 'bcell', caught && 'caught', shiny && 'shiny', !match.has(s.id) && 'off'].filter(Boolean).join(' ');
+          return `<button class="${cls}" data-id="${s.id}" aria-pressed="${target ? shiny : caught}" aria-label="${esc(s.name)}" title="${esc(s.name)} ${gameDexNum(game.id, s)}">` +
+            `${shiny ? `<span class="badge">${icon('shiny')}</span>` : ''}` +
+            spriteImg(s.id, shiny, 'loading="lazy" decoding="async"') + '</button>';
+        }).join('') + '</div></section>' });
+    }
+    morphChildren(grid, items.length ? items : nothing);
+    return;
+  }
+
+  morphChildren(grid, list.length ? list.map((s) => {
     const caught = has(s.id, false);
     const shiny = has(s.id, true);
     const cls = ['cell', caught && 'caught', shiny && 'shiny'].filter(Boolean).join(' ');
@@ -903,7 +1059,7 @@ function renderDex() {
       `<span class="num">${gameDexNum(game.id, s)}</span><span class="name">${esc(s.name)}</span>` +
       (vs.length ? `<span class="vtags">${exclusiveTag(game.id, s.id)}${versionsFor(s.id, target).map((v) => versionTag(game.id, v)).join('')}</span>` : '') +
       `</button>` };
-  }) : [{ key: 'empty', html: '<p class="empty">Nothing matches these filters.</p>' }]);
+  }) : nothing);
 }
 
 // Long-press (touch) or right-click (mouse) on a cell opens its detail sheet.
@@ -932,7 +1088,7 @@ function onDexTap(e) {
   const id = Number(cell.dataset.id);
   if (prefs.mode === 'info') { openDetail(id); return; }
   const game = currentGame();
-  const added = toggleCatch(id, game.id, prefs.mode === 'shiny', prefs.playthroughId || null, catchIndex(), activeVersion(game.id));
+  const added = tapCatch(id, game.id, prefs.mode === 'shiny', prefs.playthroughId || null, activeVersion(game.id));
   renderDex();
   if (added) {
     const fresh = $(`#dex-grid .cell[data-id="${id}"]`);
@@ -942,11 +1098,68 @@ function onDexTap(e) {
 }
 
 // ---- Hunts ----------------------------------------------------------------
+const activeHunts = () => live('hunt').filter((h) => !h.data.completedAt && !h.data.abandonedAt)
+  .sort((a, b) => b.data.startedAt.localeCompare(a.data.startedAt));
+
+// With a keyboard, Space adds +1 to one hunt: the last one clicked, else the top one.
+const hasKeyboard = matchMedia('(hover: hover) and (pointer: fine)').matches;
+let keyHuntId = null;
+function keyHunt() {
+  const active = activeHunts();
+  return active.find((h) => h.id === keyHuntId) || active[0] || null;
+}
+
+function bumpHunt(id, step = 1) {
+  const row = store.rows.get(id);
+  if (!row) return;
+  write('hunt', id, { ...row.data, encounters: Math.max(0, (row.data.encounters || 0) + step) });
+  renderHunts();
+  keepAwake();
+}
+
+function onHuntKey(e) {
+  if (e.code !== 'Space' || e.repeat || prefs.tab !== 'hunts' || $('#app').hidden) return;
+  if (document.querySelector('dialog[open]')) return;
+  if (e.target.closest?.('button, input, select, textarea, summary, a')) return;
+  const hunt = keyHunt();
+  if (!hunt) return;
+  e.preventDefault();
+  bumpHunt(hunt.id);
+}
+
+// Counting keeps the screen on: the lock is held on the Hunts tab while there's
+// an active hunt, and let go after ten minutes without a tap.
+let wakeLock = null;
+let wakeTimer = null;
+async function keepAwake() {
+  clearTimeout(wakeTimer);
+  wakeTimer = setTimeout(releaseWake, 600000);
+  if (wakeLock || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+  try {
+    const lock = await navigator.wakeLock.request('screen');
+    if (prefs.tab !== 'hunts') { lock.release().catch(() => {}); return; }
+    wakeLock = lock;
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+  } catch { /* low battery or not allowed: the screen just follows its usual timeout */ }
+}
+function releaseWake() {
+  clearTimeout(wakeTimer);
+  wakeLock?.release().catch(() => {});
+  wakeLock = null;
+}
+function updateWake() {
+  if (prefs.tab === 'hunts' && !$('#app').hidden && activeHunts().length) keepAwake();
+  else releaseWake();
+}
+
 function renderHunts() {
   const hunts = live('hunt');
   const phases = live('phase');
-  const active = hunts.filter((h) => !h.data.completedAt && !h.data.abandonedAt)
-    .sort((a, b) => b.data.startedAt.localeCompare(a.data.startedAt));
+  const active = activeHunts();
+  const keyed = hasKeyboard && active.length > 1 ? keyHunt()?.id : null;
+  const hint = $('#hunt-hint');
+  hint.hidden = !hasKeyboard || !active.length;
+  hint.textContent = active.length > 1 ? 'Tip: Space adds +1 to the outlined hunt. Click a hunt to pick it.' : 'Tip: press Space to add +1.';
   const done = hunts.filter((h) => h.data.completedAt)
     .sort((a, b) => b.data.completedAt.localeCompare(a.data.completedAt));
   const abandoned = hunts.filter((h) => !h.data.completedAt && h.data.abandonedAt);
@@ -958,7 +1171,7 @@ function renderHunts() {
       .sort((a, b) => b.data.endedAt.localeCompare(a.data.endedAt));
     const nPhases = myPhases.length;
     const sincePhase = nPhases ? (d.encounters || 0) - Math.max(...myPhases.map((p) => p.data.encountersAtPhase || 0)) : null;
-    return `<article class="hunt" data-id="${esc(h.id)}">
+    return `<article class="hunt${h.id === keyed ? ' keyed' : ''}" data-id="${esc(h.id)}">
       <div class="hunt-head">
         ${spriteImg(d.speciesId, true)}
         <div class="meta">
@@ -1026,6 +1239,12 @@ let phaseHuntId = null;
 let notesHuntId = null;
 
 function onHuntTap(e) {
+  // Clicking anywhere on an active hunt makes it the one Space counts for.
+  const card = e.target.closest('article.hunt');
+  if (card && card.dataset.id !== keyHuntId) {
+    keyHuntId = card.dataset.id;
+    if (!e.target.closest('[data-act]')) renderHunts();
+  }
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
   const id = btn.closest('article[data-id], .mini[data-id]').dataset.id;
@@ -1033,8 +1252,8 @@ function onHuntTap(e) {
   if (!row) return;
   const d = { ...row.data };
   switch (btn.dataset.act) {
-    case 'plus': d.encounters = (d.encounters || 0) + 1; break;
-    case 'minus': d.encounters = Math.max(0, (d.encounters || 0) - 1); break;
+    case 'plus': bumpHunt(id, 1); return;
+    case 'minus': bumpHunt(id, -1); return;
     case 'charm': d.shinyCharm = !d.shinyCharm; break;
     case 'mod-minus':
     case 'mod-plus': {
@@ -1145,40 +1364,70 @@ function renderRecommendations(speciesId) {
 }
 
 // ---- Stats ----------------------------------------------------------------
+const ALMOST_DONE = 12;   // a game with this few left gets its missing Pokémon listed
+
 function renderStats() {
   const catches = live('catch').map((r) => r.data);
   const regular = catches.filter((c) => !c.isShiny);
   const shiny = catches.filter((c) => c.isShiny);
   const hunts = live('hunt').map((r) => r.data);
   const doneHunts = hunts.filter((h) => h.completedAt);
-  const activeHunts = hunts.filter((h) => !h.completedAt && !h.abandonedAt);
+  const activeCount = hunts.filter((h) => !h.completedAt && !h.abandonedAt).length;
   const avg = doneHunts.length
     ? Math.round(doneHunts.reduce((n, h) => n + (h.encounters || 0), 0) / doneHunts.length) : 0;
 
   const tile = (n, label) => `<div class="tile"><b>${n.toLocaleString()}</b><span>${label}</span></div>`;
+  const bar = (name, n, total) => `<div class="game-row"><div class="line"><span>${esc(name)}</span>` +
+    `<span>${n} / ${total}</span></div><div class="bar"><i style="width:${(total ? (n / total) * 100 : 0).toFixed(1)}%"></i></div></div>`;
+
   const byGame = new Map();
   for (const c of regular) {
     if (!byGame.has(c.gameId)) byGame.set(c.gameId, new Set());
     byGame.get(c.gameId).add(c.speciesId);
   }
-  const rows = GAMES.map((g) => {
-    const dex = new Set(g.species);
-    const caught = [...(byGame.get(g.id) || [])].filter((id) => dex.has(id)).length;
-    const pct = g.species.length ? (caught / g.species.length) * 100 : 0;
-    return `<div class="game-row"><div class="line"><span>${esc(g.name)}</span>` +
-      `<span>${caught} / ${g.species.length}</span></div>` +
-      `<div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div></div>`;
-  }).join('');
+  const games = GAMES.map((g) => {
+    const have = byGame.get(g.id) || new Set();
+    const missing = g.species.filter((id) => !have.has(id));
+    return { g, caught: g.species.length - missing.length, missing };
+  });
+  const started = games.filter((x) => x.caught > 0);
+  const idle = games.filter((x) => x.caught === 0);
 
-  $('#stats').innerHTML = `<div class="tiles">
+  // Games within reach of a full dex, closest first, with what's still missing.
+  const almost = started.filter((x) => x.missing.length > 0 && x.missing.length <= ALMOST_DONE)
+    .sort((a, b) => a.missing.length - b.missing.length);
+  const almostCard = almost.length ? `<div class="card"><h2>Almost complete</h2>` + almost.map(({ g, missing }) =>
+    `<div class="game-row"><div class="line"><span>${esc(g.name)}</span><span>${missing.length} to go</span></div>` +
+    `<div class="missing">${missing.map((id) => `<button data-id="${id}" title="${esc(speciesName(id))}" aria-label="${esc(speciesName(id))}">` +
+      `${spriteImg(id, false, 'loading="lazy"')}</button>`).join('')}</div></div>`).join('') + '</div>' : '';
+
+  // National Dex by generation: species caught in any game (regional forms not counted).
+  const haveAny = new Set(regular.map((c) => SPECIES_BY_ID.get(c.speciesId)?.baseSpeciesId ?? c.speciesId));
+  const gens = new Map();
+  for (const sp of SPECIES) {
+    if ((sp.baseSpeciesId ?? sp.id) !== sp.id) continue;
+    const cur = gens.get(sp.generation) || { n: 0, total: 0 };
+    cur.total++;
+    if (haveAny.has(sp.id)) cur.n++;
+    gens.set(sp.generation, cur);
+  }
+  const genRows = [...gens.entries()].sort((a, b) => a[0] - b[0]).map(([gen, x]) => bar(`Gen ${gen}`, x.n, x.total)).join('');
+
+  setHTML($('#stats'), `<div class="tiles">
       ${tile(new Set(regular.map((c) => c.speciesId)).size, 'unique species caught')}
       ${tile(new Set(shiny.map((c) => c.speciesId)).size, 'unique shinies')}
       ${tile(catches.length, 'catch records')}
-      ${tile(activeHunts.length, 'active hunts')}
+      ${tile(activeCount, 'active hunts')}
       ${tile(doneHunts.length, 'shinies from hunts')}
       ${tile(avg, 'avg encounters per shiny')}
     </div>
-    <div class="card"><h2>Progress by game</h2>${rows}</div>`;
+    ${almostCard}
+    <div class="card"><h2>Progress by game</h2>
+      ${started.map((x) => bar(x.g.name, x.caught, x.g.species.length)).join('') || '<p class="muted">Nothing caught yet.</p>'}
+      ${idle.length && started.length ? `<details class="idle-games"><summary>Not started (${idle.length})</summary>` +
+        `${idle.map((x) => bar(x.g.name, 0, x.g.species.length)).join('')}</details>` : ''}
+    </div>
+    <div class="card"><h2>National Dex by generation</h2>${genRows}</div>`);
 }
 
 // ---- Account --------------------------------------------------------------
@@ -1294,45 +1543,8 @@ function renderAccount() {
   else s = store.lastSync ? `Up to date · last synced ${store.lastSync.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Waiting to sync…';
   if (store.pending.size) s += ` · ${store.pending.size} change${store.pending.size > 1 ? 's' : ''} waiting to upload`;
   $('#account-status').textContent = s;
+  $('#account-status').classList.toggle('err', store.status === 'error');
   renderBackup();
-  // A Google-only account has no password, which the Mac app needs.
-  const user = auth?.currentUser;
-  $('#mac-password-box').hidden = !user;
-  if (!user) return;
-  const hasPassword = user.providerData.some((p) => p.providerId === 'password');
-  $('#mac-password-title').textContent = hasPassword ? 'Change Mac password.' : 'Set Mac password.';
-  $('#mac-password-hint').textContent = hasPassword
-    ? 'The Mac app signs in with this email and password. Set a new one here if you need to.'
-    : 'You signed in with Google; the Mac app signs in with email and password. Add a password to this same account:';
-  $('#mac-username').value = user.email || '';
-}
-
-// Adds a password to a Google-only account, or replaces the existing one.
-// Changing a password needs a recent sign-in; for Google accounts we redo the
-// Google popup and try once more.
-async function saveMacPassword(pw) {
-  const user = auth.currentUser;
-  const hasPassword = user.providerData.some((p) => p.providerId === 'password');
-  const attempt = async () => {
-    if (!hasPassword) {
-      try {
-        await user.linkWithCredential(firebase.auth.EmailAuthProvider.credential(user.email, pw));
-        return;
-      } catch (err) {
-        if (err.code !== 'auth/provider-already-linked' && err.code !== 'auth/credential-already-in-use') throw err;
-      }
-    }
-    await user.updatePassword(pw);
-  };
-  try {
-    await attempt();
-  } catch (err) {
-    const google = user.providerData.some((p) => p.providerId === 'google.com');
-    if (err.code !== 'auth/requires-recent-login' || !google) throw err;
-    await user.reauthenticateWithPopup(new firebase.auth.GoogleAuthProvider());
-    await attempt();
-  }
-  await user.reload();
 }
 
 function authMessage(err) {
@@ -1344,10 +1556,7 @@ function authMessage(err) {
     case 'auth/weak-password': return 'Password must be at least 6 characters.';
     case 'auth/invalid-email': return "That doesn't look like an email address.";
     case 'auth/too-many-requests': return 'Too many attempts. Try again in a few minutes.';
-    case 'auth/requires-recent-login': return 'For security, sign out and back in, then try again.';
     case 'auth/popup-blocked': return 'The Google sign-in window was blocked. Allow pop-ups for this site, or use email and password.';
-    case 'auth/credential-already-in-use':
-    case 'auth/provider-already-linked': return 'This account already has a password.';
     default: return err?.message || String(err);
   }
 }
@@ -1496,7 +1705,14 @@ function wireEvents() {
     renderDex();
   }));
   // Filters sheet
-  $('#filter-btn').addEventListener('click', () => { renderFilterSheet(); $('#filter-dlg').showModal(); });
+  $('#filter-btn').addEventListener('click', () => { renderFilterSheet(); renderBulk(); $('#filter-dlg').showModal(); });
+  $('#filter-bulk').addEventListener('click', onBulkTap);
+  $('#view-btn').addEventListener('click', () => {
+    prefs.view = prefs.view === 'boxes' ? 'grid' : 'boxes';
+    savePrefs();
+    renderDex();
+    window.scrollTo(0, 0);
+  });
   $('#filter-groups').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-v]');
     if (!b) return;
@@ -1544,6 +1760,12 @@ function wireEvents() {
   $('#detail-body').addEventListener('change', onDetailChange);
   $('#detail-dlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 
+  // Stats: a missing Pokémon opens its details
+  $('#stats').addEventListener('click', (e) => {
+    const b = e.target.closest('.missing [data-id]');
+    if (b) openDetail(Number(b.dataset.id));
+  });
+
   // Timeline
   $('#timeline').addEventListener('change', (e) => {
     if (e.target.id !== 'review-year') return;
@@ -1559,6 +1781,7 @@ function wireEvents() {
 
   // Hunts
   $('#hunt-list').addEventListener('click', onHuntTap);
+  document.addEventListener('keydown', onHuntKey);
   huntPicker = makeSpeciesPicker($('#hunt-species'), $('#hunt-species-results'), renderRecommendations);
   phasePicker = makeSpeciesPicker($('#phase-species'), $('#phase-species-results'));
   $('#new-hunt').addEventListener('click', () => {
@@ -1659,31 +1882,8 @@ function wireEvents() {
     await resetLocal(null);
     await auth.signOut();
   });
-  $('#mac-password-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const pw = $('#mac-password').value;
-    const msg = $('#mac-password-msg');
-    msg.textContent = '';
-    msg.classList.remove('ok');
-    try {
-      await saveMacPassword(pw);
-      // Hiding the form after a successful submit is the cue password managers
-      // use to offer saving the email + password pair.
-      $('#mac-password-form').hidden = true;
-      msg.classList.add('ok');
-      msg.textContent = `Saved. On the Mac, sign in with ${auth.currentUser.email} and this password.`;
-    } catch (err) {
-      msg.textContent = authMessage(err);
-    }
-  });
-  $('#sync-btn').addEventListener('click', () => {
-    $('#mac-password-form').hidden = false;
-    $('#mac-password').value = '';
-    $('#mac-password-msg').textContent = '';
-  });
-
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { reconnect(); checkForUpdate(); }
+    if (document.visibilityState === 'visible') { reconnect(); checkForUpdate(); updateWake(); }
     else if (store.pending.size) flush();
   });
   window.addEventListener('online', reconnect);
@@ -1734,6 +1934,8 @@ async function boot() {
   document.querySelectorAll('.tabbar [data-icon]').forEach((b) => b.insertAdjacentHTML('afterbegin', icon(b.dataset.icon)));
   $('#search-icon').innerHTML = icon('search');
   $('#filter-icon').innerHTML = icon('filter');
+  $('#view-btn').innerHTML = icon('boxes');
+  $('#settings-icon').innerHTML = icon('gear');
   // The long-press tip shows on the first visit only.
   $('#dex-hint').hidden = !!prefs.hintSeen;
   if (!prefs.hintSeen) { prefs.hintSeen = true; savePrefs(); }

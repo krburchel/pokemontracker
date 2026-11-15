@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PokéTracker</title>
-<meta name="description" content="Living dex and shiny hunt tracker, synced with the PokemonTracker Mac app.">
+<meta name="description" content="Living dex and shiny hunt tracker, synced across your devices.">
 <meta name="theme-color" content="#e3350d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -24,7 +24,7 @@
   <div class="auth-card">
     <img src="icon-192.png" alt="" width="72" height="72">
     <h1>PokéTracker</h1>
-    <p class="muted">Sign in with the same account you use in the Mac app's Settings.</p>
+    <p class="muted">Sign in to keep your dex and hunts in sync on every device.</p>
     <form id="auth-form">
       <input id="auth-email" type="email" placeholder="Email" autocomplete="username" required>
       <input id="auth-password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required>
@@ -43,8 +43,8 @@
       <img class="logo" src="icon-192.png" alt="" width="30" height="30">
       <h1 id="title">Living Dex</h1>
     </div>
-    <button id="sync-btn" class="sync-btn" aria-label="Sync status and account">
-      <span id="sync-dot" class="dot"></span>
+    <button id="sync-btn" class="sync-btn" aria-label="Settings and sync status">
+      <span id="settings-icon"></span><span id="sync-dot" class="dot"></span>
     </button>
   </header>
 
@@ -64,6 +64,7 @@
           <label class="searchbox"><span id="search-icon"></span>
             <input id="dex-search" type="search" placeholder="Search" aria-label="Search"></label>
           <button id="filter-btn" class="filter-btn" aria-haspopup="dialog"><span id="filter-icon"></span>Filters<span id="filter-count" class="count" hidden></span></button>
+          <button id="view-btn" class="filter-btn" aria-pressed="false" aria-label="Box view" title="Box view" hidden></button>
         </div>
         <div class="modebar">
           <div class="seg iconseg" role="group" aria-label="What tapping a Pokémon does">
@@ -80,6 +81,7 @@
 
     <section id="tab-hunts" class="tab" hidden>
       <button id="new-hunt" class="primary wide">New Hunt</button>
+      <p id="hunt-hint" class="hint" hidden></p>
       <div id="hunt-list"></div>
     </section>
 
@@ -103,39 +105,34 @@
 <div id="toast" class="toast" role="status" hidden></div>
 
 <dialog id="account-dlg">
-  <h2>Sync</h2>
-  <p id="account-email"></p>
-  <p id="account-status" class="muted"></p>
-  <div class="setting">
-    <span>Pokémon sprites</span>
+  <h2>Settings</h2>
+  <section class="set-sec">
+    <div class="set-head">Sync</div>
+    <p id="account-email" class="muted"></p>
+    <p id="account-status" class="muted"></p>
+    <div class="set-actions">
+      <button id="sync-now">Sync now</button>
+      <button id="sign-out" class="danger">Sign out</button>
+    </div>
+  </section>
+  <section class="set-sec setting">
+    <span class="set-head">Pokémon sprites</span>
     <div class="seg" role="group" aria-label="Sprite style">
       <button data-sprites="home">HOME 3D</button>
       <button data-sprites="pixel">Pixel</button>
     </div>
-  </div>
-  <section class="backup">
-    <div class="backup-head"><span>Backup</span><small id="backup-status" class="muted"></small></div>
-    <div class="backup-actions">
+  </section>
+  <section class="set-sec backup">
+    <div class="backup-head"><span class="set-head">Backup</span><small id="backup-status" class="muted"></small></div>
+    <div class="set-actions">
       <button id="backup-export">Download backup</button>
       <button id="backup-import">Restore from file…</button>
     </div>
     <input id="backup-file" type="file" accept=".json,application/json" hidden>
     <p id="backup-msg" class="msg" role="status"></p>
   </section>
-  <details id="mac-password-box" class="mac-pw" hidden>
-    <summary>Mac app password</summary>
-    <p><b id="mac-password-title">Mac password.</b> <span id="mac-password-hint"></span></p>
-    <form id="mac-password-form" action="#" method="post">
-      <input id="mac-username" name="username" type="email" autocomplete="username" readonly aria-label="Account email">
-      <input id="mac-password" name="password" type="password" placeholder="New password (6+ characters)" minlength="6" autocomplete="new-password" required>
-      <button type="submit" class="primary">Save Password</button>
-    </form>
-    <p id="mac-password-msg" class="msg" role="status"></p>
-  </details>
   <div class="dlg-actions">
-    <button id="sync-now">Sync Now</button>
-    <button id="sign-out" class="danger">Sign Out</button>
-    <button value="close" formmethod="dialog" class="ghost" onclick="this.closest('dialog').close()">Done</button>
+    <button class="primary" onclick="this.closest('dialog').close()">Done</button>
   </div>
 </dialog>
 
@@ -209,6 +206,7 @@
     <div class="grabber" aria-hidden="true"></div>
     <h2>Filters</h2>
     <div id="filter-groups"></div>
+    <div id="filter-bulk" class="filter-group"></div>
     <div class="sheet-actions">
       <button type="button" id="filter-reset">Reset</button>
       <button type="button" id="filter-done" class="primary">Show results</button>

@@ -180,12 +180,20 @@ function renderDetail() {
       </div>
       <h2>${esc(sp.name)} <button class="ghost cry" data-act="cry" aria-label="Play cry">${icon('sound')}</button></h2>
       <div class="muted">National ${dexNum(sp)}${DEX_NUMS[prefs.gameId]?.nums[sp.id] ? ` · ${gameDexNum(prefs.gameId, sp, true)}` : ''} · Gen ${sp.generation}</div>
+      ${boxLine(sp)}
       <div class="types">${sp.types.map(typeBadge).join('')}</div>
     </div>
     <section class="detail-sec"><h3>Your collection</h3><div id="detail-own"></div></section>
     <div id="detail-remote"></div>`;
   renderOwnership();
   renderDetailRemote();
+}
+
+// "Home box 1 · row 5, slot 1": where this Pokémon sits in the selected game's boxes.
+function boxLine(sp) {
+  const pos = boxPosition(prefs.gameId, sp.id);
+  if (!pos) return '';
+  return `<div class="muted">${esc(currentGame().shortName)} box ${pos.box} · row ${pos.row}, slot ${pos.slot}</div>`;
 }
 
 function renderOwnership() {
@@ -310,7 +318,7 @@ function onDetailClick(e) {
     }
     case 'own': {
       const gid = btn.closest('[data-game]').dataset.game;
-      toggleCatch(sp.id, gid, btn.dataset.shiny === '1', ptFor(gid) || null, catchIndex());
+      tapCatch(sp.id, gid, btn.dataset.shiny === '1', ptFor(gid) || null);
       renderOwnership();
       render();
       break;

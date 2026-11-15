@@ -29,6 +29,11 @@ Live at https://krburchel.github.io/pokemontracker/
 - `sprites/home/{r|s}-{id}.webp` are 144px copies of PokéAPI's HOME 3D renders (regular/shiny) for grids;
   the detail sheet loads the full-size render. Settings → Pokémon sprites switches to pixel sprites.
 - `icons.js` is the shared line-icon set (tab bar, toolbar, markers, timeline).
+- Dex extras: box view (`boxesOf` in app.js: 30 per box, Gen 2 20; HOME uses National Dex order with regional
+  forms in their own boxes at the end; none for GO / Let's Go), mark or unmark everything shown (Filters sheet),
+  and an Undo toast whenever a catch is removed (`writeWithUndo`).
+- Hunts: Space adds +1 with a keyboard, and the screen stays on while counting (wake lock, dropped after
+  10 minutes without a tap).
 - `vendor/firebase` is the Firebase JS SDK 12.19.0 compat build of App + Auth (Apache 2.0), bundled for offline use.
 - **Bump `CACHE` in `sw.js` on every deploy.** The service worker serves app files from that version's saved
   copy, so without a bump nobody gets the change. A new file the app needs offline goes in `ASSETS` too.

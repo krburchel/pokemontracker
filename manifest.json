@@ -1,7 +1,7 @@
 {
   "name": "PokéTracker",
   "short_name": "PokéTracker",
-  "description": "Living dex and shiny hunt tracker, synced with the PokemonTracker Mac app.",
+  "description": "Living dex and shiny hunt tracker, synced across your devices.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
