@@ -32,7 +32,8 @@ Live at https://krburchel.github.io/pokemontracker/
 - `icons.js` is the shared line-icon set (tab bar, toolbar, markers, timeline).
 - Dex extras: box view (`boxesOf` in app.js: 30 per box, Gen 2 20, filled in the same order as the grid, so
   regional forms sit right after their base Pokémon, HOME included; none for GO / Let's Go), mark or unmark everything shown (Filters sheet),
-  and an Undo toast whenever a catch is removed (`writeWithUndo`).
+  an Undo toast whenever a catch is removed (`writeWithUndo`), and saved filter sets (`prefs.savedFilters`,
+  kept per device in localStorage, not synced).
 - Hunts: Space adds +1 with a keyboard, and the screen stays on while counting (wake lock, dropped after
   10 minutes without a tap).
 - `vendor/firebase` is the Firebase JS SDK 12.19.0 compat build of App + Auth (Apache 2.0), bundled for offline use.

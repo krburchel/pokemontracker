@@ -576,3 +576,9 @@ dialog.sheet.bottom {
 .cmp-grid img { display: block; width: 100%; height: auto; aspect-ratio: 1; }
 .cmp-grid button.off { opacity: .3; }
 .cmp-grid .empty { grid-column: 1 / -1; }
+
+/* Saved filter sets (Filters sheet): a chip that applies the set, joined to a small delete button. */
+.saved-chip { display: inline-flex; }
+.choice .saved-chip button:first-child { border-radius: 999px 0 0 999px; border-right: 0; padding-right: 9px; }
+.choice .saved-chip button:last-child { border-radius: 0 999px 999px 0; padding: 7px 11px 7px 9px; color: var(--muted); }
+.choice .save-filter { border-style: dashed; color: var(--muted); }

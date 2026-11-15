@@ -233,7 +233,7 @@ function ask({ title, body = '', ok = 'OK', input = null }) {
   $('#ask-label').textContent = input?.label || '';
   dlg.returnValue = '';
   openDialog(dlg);
-  if (input) field.focus();
+  if (input) { field.focus(); field.select(); }
   return new Promise((resolve) => {
     askDone = (value) => { askDone = null; resolve(value); };
     dlg.addEventListener('close', () => {
@@ -754,6 +754,7 @@ const prefs = Object.assign({
   tab: 'dex', gameId: 'home', playthroughId: '', mode: 'regular',
   gen: 'all', type: 'all', status: 'all', tag: 'all', excl: 'all', lastCaughtGame: 'sv', versionByGame: {},
   reviewYear: null, badgesExpanded: false, spriteStyle: 'home', hintSeen: false, lastBackupAt: null, view: 'grid',
+  savedFilters: [],   // [{id, name, f: {status, excl, gen, type, tag}}], kept on this device
 }, readJSON(PREFS_KEY) || {});
 const savePrefs = () => writeJSON(PREFS_KEY, prefs);
 let search = '';
@@ -889,9 +890,63 @@ function filterOptions(game) {
 }
 
 const FILTER_TITLES = { status: 'Status', excl: 'Exclusive to', gen: 'Generation', type: 'Type', tag: 'Tag' };
+const FILTER_KEYS = Object.keys(FILTER_TITLES);
+const NO_FILTERS = Object.fromEntries(FILTER_KEYS.map((k) => [k, 'all']));
+
+// ---- Saved filter sets ---------------------------------------------------------
+// A named combination of the filter choices, kept on this device (in prefs). A
+// set only shows for games that have every choice in it, so "Missing in
+// Scarlet" doesn't appear on HOME.
+const filterIsOn = (f) => FILTER_KEYS.every((k) => String(prefs[k]) === String(f[k] ?? 'all'));
+const filterFits = (f, opts) => FILTER_KEYS.every((k) => (f[k] ?? 'all') === 'all' || opts[k].some(([v]) => String(v) === String(f[k])));
+// "Missing · Gen 9 · Fire": what the filters on right now are called.
+function currentFilterName(opts) {
+  return FILTER_KEYS.filter((k) => prefs[k] !== 'all')
+    .map((k) => opts[k].find(([v]) => String(v) === String(prefs[k]))?.[1]).filter(Boolean).join(' · ');
+}
+
+function savedFiltersHTML(opts) {
+  const saved = (prefs.savedFilters || []).filter((s) => filterFits(s.f, opts));
+  const anyOn = FILTER_KEYS.some((k) => prefs[k] !== 'all');
+  const alreadySaved = saved.some((s) => filterIsOn(s.f));
+  if (!saved.length && !anyOn) return '';
+  return `<section class="filter-group"><h3>Saved</h3><div class="choice">` +
+    saved.map((s) => `<span class="saved-chip"><button data-saved="${esc(s.id)}" aria-pressed="${filterIsOn(s.f)}">${esc(s.name)}</button>` +
+      `<button data-unsave="${esc(s.id)}" aria-label="Delete saved filter ${esc(s.name)}">✕</button></span>`).join('') +
+    (anyOn && !alreadySaved ? '<button data-save-filter class="save-filter">＋ Save these filters</button>' : '') +
+    '</div></section>';
+}
+
+async function onSavedFilterTap(e) {
+  const btn = e.target.closest('[data-saved], [data-unsave], [data-save-filter]');
+  if (!btn) return false;
+  const list = prefs.savedFilters || [];
+  if (btn.dataset.saved) {
+    const s = list.find((x) => x.id === btn.dataset.saved);
+    if (!s) return true;
+    // Tapping the one that's on turns every filter off, like the other chips.
+    Object.assign(prefs, NO_FILTERS, filterIsOn(s.f) ? {} : s.f);
+  } else if (btn.dataset.unsave) {
+    const s = list.find((x) => x.id === btn.dataset.unsave);
+    if (!s || !await ask({ title: `Delete the saved filter “${s.name}”?`, ok: 'Delete' })) return true;
+    prefs.savedFilters = list.filter((x) => x !== s);
+  } else {
+    const f = Object.fromEntries(FILTER_KEYS.map((k) => [k, prefs[k]]));
+    const name = await ask({ title: 'Save these filters', ok: 'Save',
+      input: { label: 'Name', value: currentFilterName(filterOptions(currentGame())).slice(0, 60) } });
+    if (!name) return true;
+    // Saving under a name that's already used replaces that set.
+    prefs.savedFilters = [...list.filter((x) => x.name.toLowerCase() !== name.toLowerCase()), { id: uuid(), name, f }];
+  }
+  savePrefs();
+  renderFilterSheet();
+  renderDex();
+  return true;
+}
+
 function renderFilterSheet() {
   const opts = filterOptions(currentGame());
-  $('#filter-groups').innerHTML = Object.entries(opts).filter(([, list]) => list.length).map(([key, list]) =>
+  $('#filter-groups').innerHTML = savedFiltersHTML(opts) + Object.entries(opts).filter(([, list]) => list.length).map(([key, list]) =>
     `<section class="filter-group"><h3>${FILTER_TITLES[key]}</h3><div class="choice" data-key="${key}">` +
     `<button data-v="all" aria-pressed="${prefs[key] === 'all'}">${key === 'tag' ? 'Any tag' : 'All'}</button>` +
     list.map(([v, label]) => {
@@ -1783,6 +1838,7 @@ function wireEvents() {
     window.scrollTo(0, 0);
   });
   $('#filter-groups').addEventListener('click', (e) => {
+    if (e.target.closest('[data-saved], [data-unsave], [data-save-filter]')) { onSavedFilterTap(e); return; }
     const b = e.target.closest('button[data-v]');
     if (!b) return;
     const key = b.closest('[data-key]').dataset.key;
@@ -1793,7 +1849,7 @@ function wireEvents() {
     renderDex();
   });
   $('#filter-reset').addEventListener('click', () => {
-    Object.assign(prefs, { gen: 'all', type: 'all', status: 'all', tag: 'all', excl: 'all' });
+    Object.assign(prefs, NO_FILTERS);
     savePrefs();
     renderFilterSheet();
     renderDex();
