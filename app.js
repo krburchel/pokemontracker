@@ -879,23 +879,15 @@ function boxLayout(gameId) {
   return gameId === 'gsc' ? { size: 20, cols: 5 } : { size: 30, cols: 6 };
 }
 
-// A game's boxes in order: [{n, label, species}]. Each game uses its own dex
-// order. HOME keeps National Dex order with regional forms in their own boxes
-// at the end, so a Pokémon's box is its number divided by 30.
+// A game's boxes in order: [{n, species}], filled in the game's dex order, the
+// same order as the grid. Regional forms sit right after their base Pokémon
+// (HOME too: Alolan Rattata follows Rattata).
 function boxesOf(game) {
   const layout = boxLayout(game.id);
   if (!layout) return [];
   const all = game.species.map((id) => SPECIES_BY_ID.get(id)).filter(Boolean);
-  const isForm = (sp) => (sp.baseSpeciesId ?? sp.id) !== sp.id;
-  const sections = game.id === 'home'
-    ? [[null, all.filter((sp) => !isForm(sp))], ['Regional forms', all.filter(isForm)]]
-    : [[null, all]];
   const out = [];
-  for (const [label, list] of sections) {
-    for (let i = 0; i < list.length; i += layout.size) {
-      out.push({ n: out.length + 1, label, species: list.slice(i, i + layout.size) });
-    }
-  }
+  for (let i = 0; i < all.length; i += layout.size) out.push({ n: out.length + 1, species: all.slice(i, i + layout.size) });
   return out;
 }
 
@@ -1032,7 +1024,7 @@ function renderDex() {
     for (const box of boxesOf(game)) {
       if (!box.species.some((s) => match.has(s.id))) continue;
       const got = box.species.filter((s) => has(s.id, target)).length;
-      const range = box.label || `${gameDexNum(game.id, box.species[0])} – ${gameDexNum(game.id, box.species[box.species.length - 1])}`;
+      const range = `${gameDexNum(game.id, box.species[0])} – ${gameDexNum(game.id, box.species[box.species.length - 1])}`;
       items.push({ key: `box-${box.n}`, html: `<section class="box${got === box.species.length ? ' full' : ''}">` +
         `<header><b>Box ${box.n}</b><span>${esc(range)}</span><span class="box-count">${got} / ${box.species.length}</span></header>` +
         `<div class="box-grid" style="--cols:${layout.cols}">` + box.species.map((s) => {
