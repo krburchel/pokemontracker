@@ -6,7 +6,8 @@ notes/tags per catch), shiny hunts with phases/notes/best-method suggestions, ti
 synced through Firebase project `pokemon-tracker-8d5ac` (Firestore `users/{uid}/records/{id}`).
 
 Files: `icons.js` (icon set), `app.js` (sync, dex, hunts, stats, auth), `detail.js` (detail sheet + PokéAPI),
-`timeline.js` (timeline tab). Script order in `index.html`: icons.js, detail.js, timeline.js, app.js.
+`timeline.js` (timeline tab), `compare.js` (Compare sheet, opened from Stats). Script order in `index.html`:
+icons.js, detail.js, timeline.js, compare.js, app.js.
 
 Startup: the app draws from this device's saved copy (IndexedDB database `poketracker`: `rows`, `pending`,
 `meta`) before anything else loads. `app.js` then loads Firebase Auth, checks sign-in and syncs with

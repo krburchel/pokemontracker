@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>PokéTracker</title>
 <meta name="description" content="Living dex and shiny hunt tracker, synced across your devices.">
-<meta name="theme-color" content="#e3350d">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#e3350d" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="PokéTracker">
@@ -40,7 +42,7 @@
 <div id="app" class="app" hidden>
   <header class="topbar">
     <div class="brand">
-      <img class="logo" src="icon-192.png" alt="" width="30" height="30">
+      <img class="logo" src="logo-90.webp" alt="" width="30" height="30">
       <h1 id="title">Living Dex</h1>
     </div>
     <button id="sync-btn" class="sync-btn" aria-label="Settings and sync status">
@@ -235,6 +237,10 @@
   </div>
 </dialog>
 
+<dialog id="compare-dlg" class="sheet" aria-label="Compare games">
+  <div id="compare-body"></div>
+</dialog>
+
 <dialog id="detail-dlg" class="sheet" aria-label="Pokémon details">
   <div id="detail-body"></div>
 </dialog>
@@ -253,6 +259,7 @@
 <script src="icons.js"></script>
 <script src="detail.js"></script>
 <script src="timeline.js"></script>
+<script src="compare.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

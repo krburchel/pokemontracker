@@ -17,7 +17,7 @@ const FIREBASE_CONFIG = {
 const FIRESTORE_DOCS = `projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents`;
 const FIRESTORE_URL = `https://firestore.googleapis.com/v1/${FIRESTORE_DOCS}`;
 let auth = null;   // firebase.auth(), set by startFirebase()
-const POLL_MS = 20000;
+const POLL_MS = 60000;   // also syncs on every edit and whenever the app comes back to the front
 const PULL_OVERLAP_MS = 120000;
 const LEGACY_CACHE_KEY = 'pt-cache-v2';   // localStorage copy from before IndexedDB; moved over on first run
 const PREFS_KEY = 'pt-prefs-v1';
@@ -765,6 +765,7 @@ function render() {
   else if (prefs.tab === 'timeline') renderTimeline();
   else renderStats();
   refreshDetailIfOpen();
+  if ($('#compare-dlg').open) renderCompare();
 }
 
 // ---- Tabs -----------------------------------------------------------------
@@ -1485,6 +1486,7 @@ function renderStats() {
       ${tile(doneHunts.length, 'shinies from hunts')}
       ${tile(avg, 'avg encounters per shiny')}
     </div>
+    <button class="card link-card" data-act="compare"><span>Compare two games</span><span class="muted">What one has that the other doesn't ›</span></button>
     ${almostCard}
     <div class="card"><h2>Progress by game</h2>
       ${started.map((x) => bar(x.g.name, x.caught, x.g.species.length)).join('') || '<p class="muted">Nothing caught yet.</p>'}
@@ -1829,9 +1831,13 @@ function wireEvents() {
 
   // Stats: a missing Pokémon opens its details
   $('#stats').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="compare"]')) { openCompare(); return; }
     const b = e.target.closest('.missing [data-id]');
     if (b) openDetail(Number(b.dataset.id));
   });
+  $('#compare-body').addEventListener('click', onCompareClick);
+  $('#compare-body').addEventListener('change', onCompareChange);
+  $('#compare-dlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 
   // Timeline
   $('#timeline').addEventListener('change', (e) => {
