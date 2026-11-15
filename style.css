@@ -144,6 +144,9 @@ main { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   touch-action: manipulation;
+  /* Off-screen cells aren't laid out or painted until scrolled near (the Home dex has 1,082). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px auto 124px;
 }
 .cell img { width: 72px; height: 72px; opacity: .35; filter: grayscale(1); }
 .cell .num { font-size: 11px; color: var(--muted); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -496,3 +499,15 @@ dialog.sheet.bottom {
   font-size: 9px; font-weight: 700; padding: 0 5px; border-radius: 999px;
   border: 1.5px solid var(--vc); color: var(--vc); background: var(--card); line-height: 1.5;
 }
+
+/* Toast: one-line notice above the tab bar (new version ready, can't save on this device). */
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 20;
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 12px;
+  width: max-content; max-width: calc(100vw - 24px);
+  padding: 10px 14px; border-radius: 12px;
+  background: var(--text); color: var(--bg);
+  font-size: 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25);
+}
+.toast button { background: var(--bg); color: var(--text); padding: 6px 12px; font-weight: 600; flex: none; }

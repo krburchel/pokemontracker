@@ -1,7 +1,9 @@
-// App files: network-first so updates show up right away, cached copy when offline.
+// App files (the list below) are saved per version and served from that copy, so the
+// app opens without waiting on the network. Bump CACHE on every deploy: the browser
+// then installs the new version in the background and the page reloads or offers to.
 // Sprites and PokéAPI data: cache-first, since they never change.
-// Firebase sync and sign-in requests (googleapis.com) are never cached.
-var CACHE = 'poketracker-v14';
+// Sign-in and sync requests (googleapis.com) are never cached.
+var CACHE = 'poketracker-v15';
 // v2: remote sprites are now fetched with CORS. v1 held them as opaque responses,
 // which browsers count as several MB each against the storage quota.
 var SPRITES = 'poketracker-sprites-v2';
@@ -12,7 +14,6 @@ var ASSETS = [
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon-32.png',
   './vendor/firebase/firebase-app-compat.js',
   './vendor/firebase/firebase-auth-compat.js',
-  './vendor/firebase/firebase-firestore-compat.js',
   './logos/b2w2-0.webp',
   './logos/b2w2-1.webp',
   './logos/bdsp-0.webp',
@@ -50,8 +51,15 @@ var ASSETS = [
 ];
 
 self.addEventListener('install', function (e) {
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); })
-    .then(function () { return self.skipWaiting(); }));
+  // cache: 'reload' skips the browser's HTTP cache, which can hold files from before the deploy.
+  e.waitUntil(caches.open(CACHE).then(function (c) {
+    return Promise.all(ASSETS.map(function (url) {
+      return fetch(new Request(url, { cache: 'reload' })).then(function (res) {
+        if (!res.ok) throw new Error(url + ' ' + res.status);
+        return c.put(url, res);
+      });
+    }));
+  }).then(function () { return self.skipWaiting(); }));
 });
 
 self.addEventListener('activate', function (e) {
@@ -62,46 +70,31 @@ self.addEventListener('activate', function (e) {
   }).then(function () { return self.clients.claim(); }));
 });
 
+function cacheFirst(cacheName, req, options) {
+  return caches.open(cacheName).then(function (c) {
+    return c.match(req, options).then(function (hit) {
+      return hit || fetch(req).then(function (res) {
+        if (res.ok) c.put(req, res.clone());
+        return res;
+      });
+    });
+  });
+}
+
 self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
   var url = new URL(req.url);
 
-  // Sprites and PokéAPI data never change, so serve them from cache once fetched.
-  if (url.hostname === 'raw.githubusercontent.com' || url.hostname === 'pokeapi.co') {
-    e.respondWith(caches.open(url.hostname === 'pokeapi.co' ? POKEAPI : SPRITES).then(function (c) {
-      return c.match(req).then(function (hit) {
-        return hit || fetch(req).then(function (res) {
-          if (res.ok) c.put(req, res.clone());
-          return res;
-        });
-      });
-    }));
-    return;
-  }
-
+  if (url.hostname === 'raw.githubusercontent.com') { e.respondWith(cacheFirst(SPRITES, req)); return; }
+  if (url.hostname === 'pokeapi.co') { e.respondWith(cacheFirst(POKEAPI, req)); return; }
   if (url.origin !== self.location.origin) return;
-  // Bundled sprites never change: cache-first like the remote ones.
-  if (url.pathname.indexOf('/sprites/') !== -1) {
-    e.respondWith(caches.open(SPRITES).then(function (c) {
-      return c.match(req).then(function (hit) {
-        return hit || fetch(req).then(function (res) {
-          if (res.ok) c.put(req, res.clone());
-          return res;
-        });
-      });
-    }));
-    return;
-  }
-  // no-cache: always check with the server so a new version shows up on the next
-  // open, not after the browser's own HTTP cache expires.
-  e.respondWith(fetch(req, { cache: 'no-cache' }).then(function (res) {
-    if (res.ok) {
-      var copy = res.clone();
-      caches.open(CACHE).then(function (c) { c.put(req, copy); });
-    }
-    return res;
-  }).catch(function () {
-    return caches.match(req, { ignoreSearch: true });
+  // Bundled sprites are saved as they're viewed (there are 17 MB of them).
+  if (url.pathname.indexOf('/sprites/') !== -1) { e.respondWith(cacheFirst(SPRITES, req)); return; }
+
+  // App files: this version's saved copy; anything not in it comes from the network.
+  e.respondWith(cacheFirst(CACHE, req, { ignoreSearch: true, ignoreVary: true }).catch(function (err) {
+    if (req.mode !== 'navigate') throw err;
+    return caches.open(CACHE).then(function (c) { return c.match('./index.html'); });
   }));
 });

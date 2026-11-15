@@ -4,19 +4,22 @@
 // Config. These Firebase values are public by design: the security rules in
 // firestore.rules limit every request to the signed-in user's own records.
 // ---------------------------------------------------------------------------
-firebase.initializeApp({
+const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyBBYo2uN1nfQMBHMb_C_XXTSnex6tp99dE',
   authDomain: 'pokemon-tracker-8d5ac.firebaseapp.com',
   projectId: 'pokemon-tracker-8d5ac',
   storageBucket: 'pokemon-tracker-8d5ac.firebasestorage.app',
   messagingSenderId: '869525751786',
   appId: '1:869525751786:web:2ec719a2da6bc79d47d493',
-});
-const auth = firebase.auth();
-const db = firebase.firestore();
+};
+// Sync talks to Firestore over its REST API (same calls as the Mac app's CloudClient),
+// so only the Firebase Auth library is loaded, and only after the first render.
+const FIRESTORE_DOCS = `projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents`;
+const FIRESTORE_URL = `https://firestore.googleapis.com/v1/${FIRESTORE_DOCS}`;
+let auth = null;   // firebase.auth(), set by startFirebase()
 const POLL_MS = 20000;
 const PULL_OVERLAP_MS = 120000;
-const CACHE_KEY = 'pt-cache-v2';   // v1 was the Supabase era
+const LEGACY_CACHE_KEY = 'pt-cache-v2';   // localStorage copy from before IndexedDB; moved over on first run
 const PREFS_KEY = 'pt-prefs-v1';
 try { localStorage.removeItem('pt-cache-v1'); } catch { /* ignore */ }
 
@@ -156,6 +159,19 @@ const spriteImg = (id, shiny, attrs = '', large = false) => {
   const src = spriteURL(id, shiny, large);
   return `<img ${attrs} alt="" draggable="false"${src.startsWith(SPRITE_CDN) ? ' crossorigin="anonymous"' : ''} src="${src}" data-fallback="${pixelSpriteURL(id, shiny)}">`;
 };
+// One-line message above the tab bar, with an optional action button. Stays up
+// until tapped when it has an action, otherwise fades after a few seconds.
+let toastTimer = null;
+function showToast(text, action = null, onAction = null) {
+  const el = $('#toast');
+  if (!el) return;
+  clearTimeout(toastTimer);
+  el.innerHTML = `<span>${esc(text)}</span>` + (action ? `<button type="button">${esc(action)}</button>` : '');
+  el.hidden = false;
+  if (action) el.querySelector('button').addEventListener('click', () => { el.hidden = true; onAction(); });
+  else toastTimer = setTimeout(() => { el.hidden = true; }, 8000);
+}
+
 // Skip the DOM write when the markup hasn't changed.
 function setHTML(el, html) {
   if (el._html === html) return;
@@ -218,9 +234,12 @@ const gameGroup = (g) => (g.releaseGen === 'cross' ? 'Cross-Game' : `Gen ${g.rel
 // updated_at here is "seconds.nanoseconds" so it compares as a string.
 // Local writes go into `pending` and are flushed in the background; pulls
 // skip rows with unsent local edits so a tap is never overwritten.
+// Deleted records stay on the server as tombstones (deleted: true); on this
+// device a row is dropped once its deletion has been uploaded.
 // ---------------------------------------------------------------------------
 const store = {
-  userId: null,
+  userId: null,        // whose data this is; kept while signed out so unsent edits survive
+  email: '',
   rows: new Map(),
   pending: new Map(),
   cursor: null,
@@ -229,60 +248,232 @@ const store = {
   lastSync: null,
 };
 
-function loadCache(userId) {
-  const c = readJSON(CACHE_KEY);
-  store.rows = new Map();
-  store.pending = new Map();
-  store.cursor = null;
-  if (!c || c.userId !== userId) return;
-  for (const r of c.rows || []) store.rows.set(r.id, r);
-  for (const r of c.pending || []) store.pending.set(r.id, r);
-  store.cursor = c.cursor || null;
-}
+// ---- Local copy (IndexedDB) -------------------------------------------------
+// Database "poketracker": `rows` and `pending` keyed by record id, and
+// meta['session'] = {userId, email, cursor}. Each change saves only the rows it
+// touched. Every krburchel.github.io app shares one origin, hence the specific name.
+let localDB = null;
+let localBroken = false;
 
-function saveCache() {
-  writeJSON(CACHE_KEY, {
-    userId: store.userId,
-    cursor: store.cursor,
-    rows: [...store.rows.values()],
-    pending: [...store.pending.values()],
+function openLocalDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('poketracker', 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore('rows', { keyPath: 'id' });
+      req.result.createObjectStore('pending', { keyPath: 'id' });
+      req.result.createObjectStore('meta');
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 
-const recordsRef = () => db.collection('users').doc(store.userId).collection('records');
-const stamp = (ts) => `${ts.seconds}.${String(ts.nanoseconds).padStart(9, '0')}`;
+// Saving failed (storage full or blocked, some private windows): say so once
+// rather than failing silently. Edits still upload while the app stays open.
+function localFailed(e) {
+  console.warn('PokéTracker: saving on this device failed', e);
+  if (!localBroken) {
+    localBroken = true;
+    showToast("Can't save on this device (storage is full or blocked). Keep the app open until the sync dot turns green.");
+  }
+  return false;
+}
+
+// Runs fn(rows, pending, meta) in one transaction; resolves true once it has committed.
+function localTx(fn) {
+  if (!localDB) return Promise.resolve(false);
+  return new Promise((resolve, reject) => {
+    const tx = localDB.transaction(['rows', 'pending', 'meta'], 'readwrite');
+    tx.oncomplete = () => resolve(true);
+    tx.onabort = tx.onerror = () => reject(tx.error || new Error('Local save failed'));
+    fn(tx.objectStore('rows'), tx.objectStore('pending'), tx.objectStore('meta'));
+  }).catch(localFailed);
+}
+
+function readLocal() {
+  return new Promise((resolve, reject) => {
+    const tx = localDB.transaction(['rows', 'pending', 'meta'], 'readonly');
+    const session = tx.objectStore('meta').get('session');
+    const rows = tx.objectStore('rows').getAll();
+    const pending = tx.objectStore('pending').getAll();
+    tx.oncomplete = () => resolve({ session: session.result || null, rows: rows.result, pending: pending.result });
+    tx.onabort = tx.onerror = () => reject(tx.error || new Error('Local read failed'));
+  });
+}
+
+const saveSession = () => localTx((rows, pending, meta) =>
+  meta.put({ userId: store.userId, email: store.email || '', cursor: store.cursor }, 'session'));
+
+// Loads this device's saved data into `store`. Returns true when there is a
+// saved account, so the app can be shown before sign-in has been checked.
+async function loadLocal() {
+  const legacy = readJSON(LEGACY_CACHE_KEY);
+  let saved = { session: null, rows: [], pending: [] };
+  try {
+    localDB = await openLocalDB();
+    localDB.onversionchange = () => { localDB.close(); localDB = null; };
+    saved = await readLocal();
+  } catch (e) {
+    localDB = null;
+    localFailed(e);
+  }
+  if (legacy?.userId) {
+    if (localDB) {
+      // Move the old localStorage copy over. If IndexedDB already holds this
+      // account, only the old copy's unsent edits are still needed.
+      const sameUser = saved.session?.userId === legacy.userId;
+      const moved = await localTx((rows, pending, meta) => {
+        if (!sameUser) {
+          rows.clear();
+          pending.clear();
+          for (const r of legacy.rows || []) rows.put(r);
+          meta.put({ userId: legacy.userId, email: '', cursor: legacy.cursor || null }, 'session');
+        }
+        for (const r of legacy.pending || []) {
+          pending.put(r);
+          if (sameUser) rows.put({ ...r, updated_at: '' });
+        }
+      });
+      if (moved) {
+        try { localStorage.removeItem(LEGACY_CACHE_KEY); } catch { /* ignore */ }
+        saved = await readLocal().catch(() => saved);
+      }
+    } else {
+      saved = { session: { userId: legacy.userId, email: '', cursor: legacy.cursor || null },
+        rows: legacy.rows || [], pending: legacy.pending || [] };
+    }
+  }
+  if (!saved.session?.userId) return false;
+  store.userId = saved.session.userId;
+  store.email = saved.session.email || '';
+  store.cursor = saved.session.cursor || null;
+  store.pending = new Map(saved.pending.map((r) => [r.id, r]));
+  store.rows = new Map();
+  const uploaded = [];   // deletions the server already has
+  for (const r of saved.rows) {
+    if (r.deleted && !store.pending.has(r.id)) uploaded.push(r.id);
+    else store.rows.set(r.id, r);
+  }
+  for (const r of saved.pending) if (!store.rows.has(r.id)) store.rows.set(r.id, { ...r, updated_at: '' });
+  if (uploaded.length) localTx((rows) => uploaded.forEach((id) => rows.delete(id)));
+  return true;
+}
+
+// Starts this device's copy over for `user` (a different account signed in),
+// or wipes it on sign-out (user = null).
+function resetLocal(user) {
+  store.userId = user ? user.uid : null;
+  store.email = user?.email || '';
+  store.rows = new Map();
+  store.pending = new Map();
+  store.cursor = null;
+  store.lastSync = null;
+  try { localStorage.removeItem(LEGACY_CACHE_KEY); } catch { /* ignore */ }
+  return localTx((rows, pending, meta) => {
+    rows.clear();
+    pending.clear();
+    if (user) meta.put({ userId: store.userId, email: store.email, cursor: null }, 'session');
+    else meta.delete('session');
+  });
+}
+
+// ---- Firestore (REST) ---------------------------------------------------------
+const signedIn = () => !!auth?.currentUser && auth.currentUser.uid === store.userId;
+const docName = (id) => `${FIRESTORE_DOCS}/users/${store.userId}/records/${id}`;
+// "2026-10-08T12:34:56.123456Z" -> "1791462896.123456000"
+function stamp(ts) {
+  const frac = (/\.(\d+)/.exec(ts)?.[1] || '').padEnd(9, '0').slice(0, 9);
+  return `${Math.floor(Date.parse(`${ts.slice(0, 19)}Z`) / 1000)}.${frac}`;
+}
+
+async function firestorePost(path, body) {
+  const token = await auth.currentUser.getIdToken();
+  const payload = JSON.stringify(body);
+  const res = await fetch(FIRESTORE_URL + path, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: payload,
+    // Lets a small upload finish even if the app is closed right after a tap.
+    keepalive: payload.length < 50000,
+  });
+  if (!res.ok) {
+    let detail = null;
+    try {
+      const json = await res.json();
+      detail = (Array.isArray(json) ? json[0] : json)?.error;
+    } catch { /* not JSON */ }
+    throw new Error(detail?.message || `Sync server error (${res.status})`);
+  }
+  return res.json();
+}
 
 async function pull() {
   const pageSize = 1000;
+  const uid = store.userId;
   let changed = false;
   let newest = store.cursor;
-  let last = null;
+  let after = null;
   for (;;) {
-    let q = recordsRef();
+    const query = {
+      from: [{ collectionId: 'records' }],
+      orderBy: [
+        { field: { fieldPath: 'updatedAt' }, direction: 'ASCENDING' },
+        { field: { fieldPath: '__name__' }, direction: 'ASCENDING' },
+      ],
+      limit: pageSize,
+    };
     if (store.cursor) {
       const since = Number(store.cursor.split('.')[0]) * 1000 - PULL_OVERLAP_MS;
-      q = q.where('updatedAt', '>', firebase.firestore.Timestamp.fromMillis(since));
+      query.where = { fieldFilter: {
+        field: { fieldPath: 'updatedAt' }, op: 'GREATER_THAN',
+        value: { timestampValue: new Date(since).toISOString() },
+      } };
     }
-    q = q.orderBy('updatedAt').orderBy(firebase.firestore.FieldPath.documentId()).limit(pageSize);
-    if (last) q = q.startAfter(last);
-    const snap = await q.get({ source: 'server' });
-    for (const doc of snap.docs) {
-      const f = doc.data();
-      if (!f.updatedAt) continue;
-      const updated = stamp(f.updatedAt);
+    if (after) {
+      query.startAt = { before: false, values: [{ timestampValue: after.time }, { referenceValue: after.name }] };
+    }
+    const results = await firestorePost(`/users/${uid}:runQuery`, { structuredQuery: query });
+    if (store.userId !== uid) return false;   // signed out or switched account meanwhile
+    const puts = [];
+    const drops = [];
+    let count = 0;
+    for (const { document: doc } of Array.isArray(results) ? results : []) {
+      const f = doc?.fields;
+      const time = f?.updatedAt?.timestampValue;
+      if (!time) continue;
+      count++;
+      after = { time, name: doc.name };
+      const id = doc.name.slice(doc.name.lastIndexOf('/') + 1);
+      const updated = stamp(time);
       if (!newest || updated > newest) newest = updated;
-      if (store.pending.has(doc.id)) continue;
-      const cur = store.rows.get(doc.id);
+      if (store.pending.has(id)) continue;
+      const cur = store.rows.get(id);
+      if (f.deleted?.booleanValue) {
+        if (cur) {
+          store.rows.delete(id);
+          drops.push(id);
+          if (!cur.deleted) changed = true;
+        }
+        continue;
+      }
       if (cur && cur.updated_at === updated) continue;
       let data;
-      try { data = JSON.parse(f.json); } catch { continue; }
-      store.rows.set(doc.id, { id: doc.id, kind: f.kind, data, deleted: !!f.deleted, updated_at: updated });
+      try { data = JSON.parse(f.json.stringValue); } catch { continue; }
+      const row = { id, kind: f.kind?.stringValue, data, deleted: false, updated_at: updated };
+      store.rows.set(id, row);
+      puts.push(row);
       changed = true;
     }
-    if (snap.size < pageSize) break;
-    last = snap.docs[snap.docs.length - 1];
+    // Save each page as it arrives; the cursor only moves once every page is in.
+    if (puts.length || drops.length) {
+      localTx((rows) => { puts.forEach((r) => rows.put(r)); drops.forEach((id) => rows.delete(id)); });
+    }
+    if (count < pageSize) break;
   }
-  store.cursor = newest;
+  if (newest !== store.cursor) {
+    store.cursor = newest;
+    saveSession();
+  }
   return changed;
 }
 
@@ -294,46 +485,50 @@ function scheduleFlush(delay = 600) {
 }
 
 async function flush() {
-  if (flushing || !store.pending.size || !store.userId) return;
+  if (flushing || !store.pending.size || !signedIn()) return;
   flushing = true;
+  const uid = store.userId;
   const batch = [...store.pending.values()];
   setStatus('busy');
   try {
     for (let i = 0; i < batch.length; i += 500) {
-      const wb = db.batch();
-      for (const r of batch.slice(i, i + 500)) {
-        wb.set(recordsRef().doc(r.id), {
-          kind: r.kind,
-          json: JSON.stringify(r.data),
-          deleted: r.deleted,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        });
-      }
-      await wb.commit();
+      await firestorePost(':commit', { writes: batch.slice(i, i + 500).map((r) => ({
+        update: {
+          name: docName(r.id),
+          fields: {
+            kind: { stringValue: r.kind },
+            json: { stringValue: JSON.stringify(r.data) },
+            deleted: { booleanValue: !!r.deleted },
+          },
+        },
+        updateTransforms: [{ fieldPath: 'updatedAt', setToServerValue: 'REQUEST_TIME' }],
+      })) });
     }
   } catch (e) {
     flushing = false;
+    if (store.userId !== uid) return;
     setStatus('error', describeError(e));
     scheduleFlush(10000);
     return;
   }
   flushing = false;
+  if (store.userId !== uid) return;
   // Only clear entries that weren't edited again while the request was in flight.
-  for (const r of batch) if (store.pending.get(r.id) === r) store.pending.delete(r.id);
-  saveCache();
+  const sent = batch.filter((r) => store.pending.get(r.id) === r);
+  for (const r of sent) store.pending.delete(r.id);
+  localTx((rows, pending) => sent.forEach((r) => pending.delete(r.id)));
   if (store.pending.size) scheduleFlush(0);
   else syncNow();
 }
 
 let syncing = false;
 async function syncNow() {
-  if (syncing || !store.userId) return;
+  if (syncing || !signedIn()) return;
   syncing = true;
   setStatus('busy');
   try {
     if (store.pending.size) await flush();
     const changed = await pull();
-    saveCache();
     store.lastSync = new Date();
     setStatus('idle');
     if (changed) render();
@@ -347,7 +542,7 @@ async function syncNow() {
 function describeError(e) {
   if (!navigator.onLine) return 'Offline — changes are saved on this device and will sync when you reconnect.';
   const msg = e?.message || String(e);
-  if (/unavailable|network|offline|Failed to get/i.test(msg)) return "Can't reach the sync server. Changes are saved on this device and will sync once it's reachable.";
+  if (/unavailable|network|offline|Failed to (get|fetch)|Load failed/i.test(msg)) return "Can't reach the sync server. Changes are saved on this device and will sync once it's reachable.";
   return msg;
 }
 
@@ -363,15 +558,17 @@ function write(kind, id, data, deleted = false) {
   writeMany([{ kind, id, data, deleted }]);
 }
 
-// Several writes with one cache save (a restore can be thousands of rows).
+// Several writes in one save (a restore can be thousands of rows).
 function writeMany(list) {
+  const saved = [];
   for (const { kind, id, data, deleted = false } of list) {
     const row = { id, kind, data, deleted };
-    const prev = store.rows.get(id);
-    store.rows.set(id, { ...row, updated_at: prev?.updated_at ?? '' });
+    const full = { ...row, updated_at: store.rows.get(id)?.updated_at ?? '' };
+    store.rows.set(id, full);
     store.pending.set(id, row);
+    saved.push([full, row]);
   }
-  saveCache();
+  localTx((rows, pending) => { for (const [full, row] of saved) { rows.put(full); pending.put(row); } });
   scheduleFlush();
 }
 
@@ -1093,13 +1290,13 @@ function renderAccount() {
   $('#account-email').textContent = `Signed in as ${store.email || ''}`;
   let s;
   if (store.status === 'error') s = store.error;
-  else if (store.status === 'busy') s = 'Syncing…';
+  else if (store.status === 'busy') s = signedIn() ? 'Syncing…' : 'Connecting…';
   else s = store.lastSync ? `Up to date · last synced ${store.lastSync.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Waiting to sync…';
   if (store.pending.size) s += ` · ${store.pending.size} change${store.pending.size > 1 ? 's' : ''} waiting to upload`;
   $('#account-status').textContent = s;
   renderBackup();
   // A Google-only account has no password, which the Mac app needs.
-  const user = auth.currentUser;
+  const user = auth?.currentUser;
   $('#mac-password-box').hidden = !user;
   if (!user) return;
   const hasPassword = user.providerData.some((p) => p.providerId === 'password');
@@ -1160,23 +1357,69 @@ function authMessage(err) {
 // ---------------------------------------------------------------------------
 let pollTimer = null;
 
-function enterApp(user) {
-  store.userId = user.uid;
-  store.email = user.email;
-  loadCache(store.userId);
+function showApp() {
   $('#auth').hidden = true;
   $('#app').hidden = false;
   showTab(prefs.tab);
+}
+
+// Sign-in confirmed. The app may already be on screen from this device's saved
+// copy (see boot); a different account starts from an empty copy.
+function enterApp(user) {
+  const switched = store.userId !== user.uid;
+  if (switched) {
+    resetLocal(user);
+  } else if (store.email !== (user.email || '')) {
+    store.email = user.email || '';
+    saveSession();
+  }
+  if ($('#app').hidden) showApp();
+  else if (switched) render();
   syncNow();
   clearInterval(pollTimer);
   pollTimer = setInterval(() => { if (document.visibilityState === 'visible') syncNow(); }, POLL_MS);
 }
 
+// Signed out. This device's copy is kept, so unsent edits upload if the same
+// account signs back in; the Sign Out button wipes it first.
 function leaveApp() {
-  store.userId = null;
   clearInterval(pollTimer);
   $('#app').hidden = true;
   $('#auth').hidden = false;
+}
+
+// ---- Firebase Auth, loaded after the first render -----------------------------
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = () => { el.remove(); reject(new Error(`Couldn't load ${src}`)); };
+    document.head.append(el);
+  });
+}
+
+let firebaseStarting = null;
+function startFirebase() {
+  if (auth) return Promise.resolve();
+  if (!firebaseStarting) {
+    firebaseStarting = (async () => {
+      if (!window.firebase) await loadScript('vendor/firebase/firebase-app-compat.js');
+      if (!window.firebase.auth) await loadScript('vendor/firebase/firebase-auth-compat.js');
+      if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+      auth = firebase.auth();
+      $('#auth-msg').textContent = '';
+      auth.onAuthStateChanged((user) => { if (user) enterApp(user); else leaveApp(); });
+    })().catch((e) => {
+      // Retried when the connection comes back or the app is reopened.
+      firebaseStarting = null;
+      const msg = "Can't reach the sign-in service. Check your connection.";
+      if ($('#app').hidden) { leaveApp(); $('#auth-msg').textContent = msg; }
+      else setStatus('error', `${msg} Changes are saved on this device.`);
+      throw e;
+    });
+  }
+  return firebaseStarting;
 }
 
 function wireEvents() {
@@ -1191,6 +1434,7 @@ function wireEvents() {
     const msg = $('#auth-msg');
     msg.textContent = '';
     try {
+      await startFirebase();
       if (authMode === 'signup') await auth.createUserWithEmailAndPassword(email, password);
       else await auth.signInWithEmailAndPassword(email, password);
     } catch (err) {
@@ -1200,6 +1444,7 @@ function wireEvents() {
   $('#google-signin').addEventListener('click', async () => {
     $('#auth-msg').textContent = '';
     try {
+      await startFirebase();
       await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
     } catch (err) {
       if (err.code !== 'auth/popup-closed-by-user') $('#auth-msg').textContent = authMessage(err);
@@ -1410,7 +1655,8 @@ function wireEvents() {
   $('#sign-out').addEventListener('click', async () => {
     if (store.pending.size && !confirm('Some changes haven\'t uploaded yet. Sign out anyway and lose them?')) return;
     $('#account-dlg').close();
-    try { localStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
+    try { await startFirebase(); } catch { return; }
+    await resetLocal(null);
     await auth.signOut();
   });
   $('#mac-password-form').addEventListener('submit', async (e) => {
@@ -1437,10 +1683,10 @@ function wireEvents() {
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') syncNow();
+    if (document.visibilityState === 'visible') { reconnect(); checkForUpdate(); }
     else if (store.pending.size) flush();
   });
-  window.addEventListener('online', () => syncNow());
+  window.addEventListener('online', reconnect);
 }
 
 function applySpriteStyle() {
@@ -1467,12 +1713,13 @@ function fillStaticSelects() {
 }
 
 async function boot() {
-  const [species, games, badges, exclusives, dexNums] = await Promise.all([
+  const [species, games, badges, exclusives, dexNums, hasSaved] = await Promise.all([
     fetch('data/species.json').then((r) => r.json()),
     fetch('data/games.json').then((r) => r.json()),
     fetch('data/badges.json').then((r) => r.json()),
     fetch('data/exclusives.json').then((r) => r.json()),
     fetch('data/dexnums.json').then((r) => r.json()),
+    loadLocal().catch(() => false),
   ]);
   BADGES = badges;
   DEX_NUMS = dexNums;
@@ -1501,12 +1748,55 @@ async function boot() {
     }
   }, true);
 
-  auth.onAuthStateChanged((user) => {
-    if (user && user.uid !== store.userId) enterApp(user);
-    else if (!user) leaveApp();
-  });
+  // A saved account shows straight away from this device's copy. Sign-in is
+  // checked, and sync starts, once that first screen has been painted.
+  if (hasSaved) {
+    showApp();
+    setStatus('busy');
+    let started = false;
+    const start = () => { if (!started) { started = true; reconnect(); } };
+    requestAnimationFrame(() => setTimeout(start, 0));
+    setTimeout(start, 1500);   // no frames are drawn while the tab is in the background
+  } else {
+    reconnect();
+  }
+  watchForUpdates();
+}
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// Loads sign-in if it isn't up yet (first run, or an earlier attempt failed), then syncs.
+function reconnect() {
+  if (auth) syncNow();
+  else startFirebase().catch(() => {});
+}
+
+// ---- App updates ------------------------------------------------------------
+// The service worker serves the app from its saved copy and installs a new
+// version in the background. When one takes over, reload if the app was just
+// opened and hasn't been touched; otherwise offer a Reload button.
+let swRegistration = null;
+let lastUpdateCheck = Date.now();
+function watchForUpdates() {
+  if (!('serviceWorker' in navigator)) return;
+  const sw = navigator.serviceWorker;
+  const hadVersion = !!sw.controller;
+  let touched = false;
+  let reloading = false;
+  for (const ev of ['pointerdown', 'keydown']) addEventListener(ev, () => { touched = true; }, { capture: true, passive: true });
+  sw.addEventListener('controllerchange', () => {
+    if (!hadVersion || reloading) return;   // first install: nothing to refresh
+    const reload = () => { reloading = true; location.reload(); };
+    if (!touched) reload();
+    else showToast('A new version is ready.', 'Reload', reload);
+  });
+  sw.register('sw.js').then((reg) => { swRegistration = reg; }).catch(() => {});
+}
+
+// An installed app can stay open for days, so look for a new version when it
+// comes back to the foreground (at most every 10 minutes).
+function checkForUpdate() {
+  if (!swRegistration || Date.now() - lastUpdateCheck < 600000) return;
+  lastUpdateCheck = Date.now();
+  swRegistration.update().catch(() => {});
 }
 
 boot();

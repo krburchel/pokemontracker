@@ -8,6 +8,11 @@ synced through Firebase project `pokemon-tracker-8d5ac` (Firestore `users/{uid}/
 Files: `icons.js` (icon set), `app.js` (sync, dex, hunts, stats, auth), `detail.js` (detail sheet + PokéAPI),
 `timeline.js` (timeline tab). Script order in `index.html`: icons.js, detail.js, timeline.js, app.js.
 
+Startup: the app draws from this device's saved copy (IndexedDB database `poketracker`: `rows`, `pending`,
+`meta`) before anything else loads. `app.js` then loads Firebase Auth, checks sign-in and syncs with
+Firestore over its REST API (`runQuery` / `commit`, the same calls as the Mac app's `CloudClient.swift`);
+there is no Firestore library.
+
 Live at https://krburchel.github.io/pokemontracker/
 
 - `data/species.json`, `data/games.json` are copied from the Mac app's Resources; `data/badges.json` is
@@ -24,5 +29,7 @@ Live at https://krburchel.github.io/pokemontracker/
 - `sprites/home/{r|s}-{id}.webp` are 144px copies of PokéAPI's HOME 3D renders (regular/shiny) for grids;
   the detail sheet loads the full-size render. Settings → Pokémon sprites switches to pixel sprites.
 - `icons.js` is the shared line-icon set (tab bar, toolbar, markers, timeline).
-- `vendor/firebase` is the Firebase JS SDK 12.19.0 compat build (Apache 2.0), bundled for offline use.
-- Bump `CACHE` in `sw.js` when shipping changes so installed copies refresh their offline cache.
+- `vendor/firebase` is the Firebase JS SDK 12.19.0 compat build of App + Auth (Apache 2.0), bundled for offline use.
+- **Bump `CACHE` in `sw.js` on every deploy.** The service worker serves app files from that version's saved
+  copy, so without a bump nobody gets the change. A new file the app needs offline goes in `ASSETS` too.
+  When a new version takes over, the page reloads itself (or shows a Reload toast if it's in use).
