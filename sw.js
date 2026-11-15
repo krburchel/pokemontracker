@@ -3,7 +3,7 @@
 // then installs the new version in the background and the page reloads or offers to.
 // Sprites and PokéAPI data: cache-first, since they never change.
 // Sign-in and sync requests (googleapis.com) are never cached.
-var CACHE = 'poketracker-v17';
+var CACHE = 'poketracker-v18';
 // v2: remote sprites are now fetched with CORS. v1 held them as opaque responses,
 // which browsers count as several MB each against the storage quota.
 var SPRITES = 'poketracker-sprites-v2';

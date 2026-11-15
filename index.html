@@ -201,6 +201,19 @@
   </form>
 </dialog>
 
+<dialog id="ask-dlg">
+  <form id="ask-form" method="dialog">
+    <h2 id="ask-title"></h2>
+    <p id="ask-body" class="muted"></p>
+    <label id="ask-field" hidden><span id="ask-label"></span>
+      <input id="ask-input" autocomplete="off" maxlength="60"></label>
+    <div class="dlg-actions">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit" class="primary" id="ask-ok" value="ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="filter-dlg" class="sheet bottom" aria-label="Filters">
   <div class="filter-body">
     <div class="grabber" aria-hidden="true"></div>

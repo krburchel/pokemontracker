@@ -551,3 +551,8 @@ dialog.sheet.bottom {
 .missing button { padding: 2px; background: var(--bg); border-radius: 10px; }
 .missing img { display: block; width: 44px; height: 44px; }
 .idle-games summary { cursor: pointer; color: var(--muted); font-size: 14px; padding: 10px 0 2px; border-top: 1px solid var(--line); }
+
+/* In-app confirm / name prompt (replaces the browser's own pop-ups). */
+#ask-dlg h2 { margin-bottom: 0; }
+#ask-body { margin: 0; white-space: pre-line; font-size: 14px; }
+#ask-input { border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; background: var(--card); }

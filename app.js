@@ -179,6 +179,71 @@ function hideToast() {
   $('#toast').hidden = true;
 }
 
+// ---- Dialogs ---------------------------------------------------------------
+// Every sheet and dialog opens through openDialog, which adds a history entry so
+// the Back button (or the back swipe) closes it instead of leaving the app.
+// Closing it any other way removes that entry again.
+const dialogStack = [];        // open dialogs, oldest first
+const closedByBack = new Set();
+let popsToIgnore = 0;          // history.back() calls of our own still on their way
+
+function openDialog(dlg) {
+  if (dlg.open) return;
+  dlg.showModal();
+  dialogStack.push(dlg);
+  history.pushState({ ptDialogs: dialogStack.length }, '');
+}
+
+function watchDialogs() {
+  document.querySelectorAll('dialog').forEach((dlg) => dlg.addEventListener('close', () => {
+    const i = dialogStack.lastIndexOf(dlg);
+    if (i < 0) return;
+    dialogStack.splice(i, 1);
+    if (closedByBack.delete(dlg)) return;
+    popsToIgnore++;
+    history.back();
+  }));
+  window.addEventListener('popstate', () => {
+    if (popsToIgnore > 0) { popsToIgnore--; return; }
+    const top = dialogStack[dialogStack.length - 1];
+    if (!top) return;
+    closedByBack.add(top);
+    top.close();
+  });
+  // Reloaded with a dialog's entry still in the history: step back past it.
+  const stale = history.state?.ptDialogs;
+  if (stale) { popsToIgnore++; history.go(-stale); }
+}
+
+// In-app replacement for confirm() and prompt(). Resolves true/false, or with
+// `input` the trimmed text (null when cancelled).
+let askDone = null;
+function ask({ title, body = '', ok = 'OK', input = null }) {
+  const dlg = $('#ask-dlg');
+  if (askDone) askDone(input ? null : false);
+  $('#ask-title').textContent = title;
+  $('#ask-body').textContent = body;
+  $('#ask-body').hidden = !body;
+  $('#ask-ok').textContent = ok;
+  const field = $('#ask-input');
+  $('#ask-field').hidden = !input;
+  field.required = !!input;
+  field.value = input?.value || '';
+  field.placeholder = input?.placeholder || '';
+  $('#ask-label').textContent = input?.label || '';
+  dlg.returnValue = '';
+  openDialog(dlg);
+  if (input) field.focus();
+  return new Promise((resolve) => {
+    askDone = (value) => { askDone = null; resolve(value); };
+    dlg.addEventListener('close', () => {
+      if (!askDone) return;
+      const yes = dlg.returnValue === 'ok';
+      askDone(input ? (yes ? field.value.trim() || null : null) : yes);
+    }, { once: true });
+  });
+}
+
 // Skip the DOM write when the markup hasn't changed.
 function setHTML(el, html) {
   if (el._html === html) return;
@@ -755,7 +820,7 @@ function openGamePicker() {
         `<span class="tile-name">${esc(g.name)}</span>` +
         `<span class="tile-progress">${n} / ${g.species.length}</span><span class="bar"><i style="width:${pct.toFixed(1)}%"></i></span></button>`;
     }).join('') + '</div>').join('');
-  $('#game-dlg').showModal();
+  openDialog($('#game-dlg'));
   $('#game-grid .game-tile.on')?.scrollIntoView({ block: 'center' });
 }
 
@@ -934,15 +999,16 @@ function renderBulk() {
     `<button type="button" data-bulk="clear" ${clear.n ? '' : 'disabled'}>Unmark ${clear.n.toLocaleString()}</button></div>`);
 }
 
-function onBulkTap(e) {
+async function onBulkTap(e) {
   const btn = e.target.closest('[data-bulk]');
   if (!btn) return;
   const mark = btn.dataset.bulk === 'mark';
   const plan = bulkPlan(mark);
   if (!plan.n) return;
   const count = `${plan.n.toLocaleString()} Pokémon`;
-  if (!confirm(mark ? `Mark ${count} as ${plan.what}?`
-    : `Unmark ${count} (${plan.what})? Their notes, tags and catch dates go too.`)) return;
+  const yes = await ask(mark ? { title: `Mark ${count} as ${plan.what}?`, ok: 'Mark' }
+    : { title: `Unmark ${count}?`, body: `Removes them as ${plan.what}, along with their notes, tags and catch dates.`, ok: 'Unmark' });
+  if (!yes) return;
   $('#filter-dlg').close();   // so the result, and the Undo, are in view
   writeWithUndo(plan.writes, mark ? `Marked ${count} as ${plan.what}` : `Unmarked ${count}`, 15000);
   renderDex();
@@ -1255,14 +1321,18 @@ function onHuntTap(e) {
       break;
     }
     case 'abandon':
-      if (!confirm(`Abandon the ${speciesName(d.speciesId)} hunt? You can resurrect it later.`)) return;
-      d.abandonedAt = nowISO();
-      break;
+      ask({ title: `Abandon the ${speciesName(d.speciesId)} hunt?`, body: 'You can resurrect it later from the Abandoned list.', ok: 'Abandon' }).then((yes) => {
+        const cur = store.rows.get(id);
+        if (!yes || !cur) return;
+        write('hunt', id, { ...cur.data, abandonedAt: nowISO() });
+        renderHunts();
+      });
+      return;
     case 'resurrect': d.abandonedAt = null; break;
     case 'set':
       countHuntId = id;
       $('#count-input').value = d.encounters || 0;
-      $('#count-dlg').showModal();
+      openDialog($('#count-dlg'));
       $('#count-input').select();
       return;
     case 'phase':
@@ -1270,27 +1340,29 @@ function onHuntTap(e) {
       phasePicker.reset();
       $('#phase-notes').value = '';
       $('#phase-sub').textContent = `Log a non-target shiny found during your ${speciesName(d.speciesId)} hunt. It's recorded at encounter ${(d.encounters || 0).toLocaleString()}; the count keeps running.`;
-      $('#phase-dlg').showModal();
+      openDialog($('#phase-dlg'));
       return;
     case 'del-phase': {
       const pid = btn.closest('[data-phase]').dataset.phase;
       const prow = store.rows.get(pid);
-      if (prow && confirm(`Delete the ${speciesName(prow.data.speciesId)} phase?`)) {
+      if (!prow) return;
+      ask({ title: `Delete the ${speciesName(prow.data.speciesId)} phase?`, ok: 'Delete' }).then((yes) => {
+        if (!yes) return;
         write('phase', pid, prow.data, true);
         renderHunts();
-      }
+      });
       return;
     }
     case 'notes':
       notesHuntId = id;
       $('#notes-input').value = d.notes || '';
-      $('#notes-dlg').showModal();
+      openDialog($('#notes-dlg'));
       return;
     case 'caught':
       caughtHuntId = id;
       $('#caught-name').textContent = `${speciesName(d.speciesId)} after ${(d.encounters || 0).toLocaleString()} encounters`;
       $('#caught-game').value = prefs.lastCaughtGame;
-      $('#caught-dlg').showModal();
+      openDialog($('#caught-dlg'));
       return;
   }
   write('hunt', id, d);
@@ -1521,7 +1593,7 @@ async function importBackup(file) {
     same ? `• ${same.toLocaleString()} already match` : '',
     skipped ? `• ${skipped.toLocaleString()} unreadable entr${skipped === 1 ? 'y' : 'ies'} will be skipped` : '',
   ].filter(Boolean).join('\n');
-  if (!confirm(`Restore from ${from}?\n\n${lines}\n\nAnything added since the backup stays.`)) return;
+  if (!await ask({ title: `Restore from ${from}?`, body: `${lines}\n\nAnything added since the backup stays.`, ok: 'Restore' })) return;
   writeMany(restore.map(({ id, kind, data }) => ({ id, kind, data })));
   render();
   backupMessage(`Restored ${describeRecords(restore)}. Uploading to your account…`);
@@ -1677,12 +1749,15 @@ function wireEvents() {
     window.scrollTo(0, 0);
   });
   $('#game-dlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
-  $('#pt-select').addEventListener('change', (e) => {
+  $('#pt-select').addEventListener('change', async (e) => {
     if (e.target.value === '__new') {
-      const name = prompt(`Name for the new ${currentGame().shortName} playthrough (e.g. Nuzlocke):`);
-      if (name && name.trim()) {
+      e.target.value = prefs.playthroughId;   // show the current one again while asking
+      const game = currentGame();
+      const name = await ask({ title: 'New playthrough', body: `A separate dex for ${game.name}.`, ok: 'Create',
+        input: { label: 'Name', placeholder: 'e.g. Nuzlocke' } });
+      if (name) {
         const id = uuid();
-        write('playthrough', id, { name: name.trim(), gameId: currentGame().id, createdAt: nowISO() });
+        write('playthrough', id, { name, gameId: game.id, createdAt: nowISO() });
         prefs.playthroughId = id;
       }
     } else {
@@ -1697,7 +1772,7 @@ function wireEvents() {
     renderDex();
   }));
   // Filters sheet
-  $('#filter-btn').addEventListener('click', () => { renderFilterSheet(); renderBulk(); $('#filter-dlg').showModal(); });
+  $('#filter-btn').addEventListener('click', () => { renderFilterSheet(); renderBulk(); openDialog($('#filter-dlg')); });
   $('#filter-bulk').addEventListener('click', onBulkTap);
   $('#view-btn').addEventListener('click', () => {
     prefs.view = prefs.view === 'boxes' ? 'grid' : 'boxes';
@@ -1779,7 +1854,7 @@ function wireEvents() {
   $('#new-hunt').addEventListener('click', () => {
     $('#hunt-form').reset();
     huntPicker.reset();
-    $('#hunt-dlg').showModal();
+    openDialog($('#hunt-dlg'));
     $('#hunt-species').focus();
   });
   // Changing method or charm by hand drops a tapped recommendation's modifiers.
@@ -1845,11 +1920,12 @@ function wireEvents() {
     }
     renderHunts();
   });
+  watchDialogs();
   document.querySelectorAll('dialog [data-close]').forEach((b) =>
     b.addEventListener('click', () => b.closest('dialog').close()));
 
   // Account
-  $('#sync-btn').addEventListener('click', () => { renderAccount(); $('#account-dlg').showModal(); });
+  $('#sync-btn').addEventListener('click', () => { renderAccount(); openDialog($('#account-dlg')); });
   $('#sync-now').addEventListener('click', () => syncNow());
   $('#backup-export').addEventListener('click', () => {
     backupMessage('');
@@ -1868,7 +1944,8 @@ function wireEvents() {
     render();
   }));
   $('#sign-out').addEventListener('click', async () => {
-    if (store.pending.size && !confirm('Some changes haven\'t uploaded yet. Sign out anyway and lose them?')) return;
+    if (store.pending.size && !await ask({ title: 'Sign out with unsent changes?',
+      body: "Some changes haven't uploaded yet and will be lost.", ok: 'Sign out' })) return;
     $('#account-dlg').close();
     try { await startFirebase(); } catch { return; }
     await resetLocal(null);

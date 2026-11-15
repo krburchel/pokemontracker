@@ -152,7 +152,7 @@ function openDetail(speciesId, { push = false, keepHistory = false } = {}) {
   detailState.expanded = new Set();
   const dlg = $('#detail-dlg');
   renderDetail();
-  if (!dlg.open) dlg.showModal();
+  openDialog(dlg);
   $('#detail-body').scrollTop = 0;
   const sp = SPECIES_BY_ID.get(speciesId);
   loadDetail(sp).then(() => { if (detailState.id === speciesId) renderDetailRemote(); })
