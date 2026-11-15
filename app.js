@@ -1983,6 +1983,7 @@ function wireEvents() {
     renderHunts();
   });
   watchDialogs();
+  wirePalette();
   document.querySelectorAll('dialog [data-close]').forEach((b) =>
     b.addEventListener('click', () => b.closest('dialog').close()));
 
@@ -2067,6 +2068,7 @@ async function boot() {
   $('#filter-icon').innerHTML = icon('filter');
   $('#view-btn').innerHTML = icon('boxes');
   $('#settings-icon').innerHTML = icon('gear');
+  $('#palette-btn').innerHTML = icon('jump');
   // The long-press tip shows on the first visit only.
   $('#dex-hint').hidden = !!prefs.hintSeen;
   if (!prefs.hintSeen) { prefs.hintSeen = true; savePrefs(); }

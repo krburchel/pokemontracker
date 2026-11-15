@@ -45,9 +45,12 @@
       <img class="logo" src="logo-90.webp" alt="" width="30" height="30">
       <h1 id="title">Living Dex</h1>
     </div>
-    <button id="sync-btn" class="sync-btn" aria-label="Settings and sync status">
-      <span id="settings-icon"></span><span id="sync-dot" class="dot"></span>
-    </button>
+    <div class="top-actions">
+      <button id="palette-btn" class="sync-btn" aria-label="Jump to a Pokémon, game or action" title="Jump to… (Ctrl+K)"></button>
+      <button id="sync-btn" class="sync-btn" aria-label="Settings and sync status">
+        <span id="settings-icon"></span><span id="sync-dot" class="dot"></span>
+      </button>
+    </div>
   </header>
 
   <main>
@@ -237,6 +240,15 @@
   </div>
 </dialog>
 
+<dialog id="palette-dlg" class="sheet" aria-label="Jump to">
+  <div class="pal-body">
+    <input id="palette-input" type="search" placeholder="Pokémon, game, tab or action" autocomplete="off" autocapitalize="off" spellcheck="false"
+      role="combobox" aria-expanded="true" aria-controls="palette-list" aria-label="Jump to">
+    <div id="palette-list" role="listbox"></div>
+    <p class="hint">Add a game to mark a catch: “pikachu violet”, “eevee home shiny”.</p>
+  </div>
+</dialog>
+
 <dialog id="compare-dlg" class="sheet" aria-label="Compare games">
   <div id="compare-body"></div>
 </dialog>
@@ -260,6 +272,7 @@
 <script src="detail.js"></script>
 <script src="timeline.js"></script>
 <script src="compare.js"></script>
+<script src="palette.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

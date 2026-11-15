@@ -3,13 +3,13 @@
 // then installs the new version in the background and the page reloads or offers to.
 // Sprites and PokéAPI data: cache-first, since they never change.
 // Sign-in and sync requests (googleapis.com) are never cached.
-var CACHE = 'poketracker-v20';
+var CACHE = 'poketracker-v21';
 // v2: remote sprites are now fetched with CORS. v1 held them as opaque responses,
 // which browsers count as several MB each against the storage quota.
 var SPRITES = 'poketracker-sprites-v2';
 var POKEAPI = 'poketracker-pokeapi-v1';
 var ASSETS = [
-  './', './index.html', './style.css', './fonts/rubik-latin.woff2', './icons.js', './app.js', './detail.js', './timeline.js', './compare.js', './manifest.json',
+  './', './index.html', './style.css', './fonts/rubik-latin.woff2', './icons.js', './app.js', './detail.js', './timeline.js', './compare.js', './palette.js', './manifest.json',
   './data/species.json', './data/games.json', './data/badges.json', './data/exclusives.json', './data/dexnums.json',
   './logo-90.webp', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png', './favicon-32.png',
   './vendor/firebase/firebase-app-compat.js',

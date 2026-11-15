@@ -37,7 +37,8 @@ DEXES = {
     "bdsp": [("original-sinnoh", "Sinnoh", "")],
     "legendsarceus": [("hisui", "Hisui", "")],
     "sv": [("paldea", "Paldea", ""), ("kitakami", "Kitakami", "Kitakami"), ("blueberry", "Blueberry", "Blueberry")],
-    "legendsza": [("lumiose-city", "Lumiose", "")],
+    # Hyperspace is the Mega Dimension DLC's Pokédex.
+    "legendsza": [("lumiose-city", "Lumiose", ""), ("hyperspace", "Hyperspace", "Hyperspace")],
 }
 
 

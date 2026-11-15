@@ -6,8 +6,8 @@ notes/tags per catch), shiny hunts with phases/notes/best-method suggestions, ti
 synced through Firebase project `pokemon-tracker-8d5ac` (Firestore `users/{uid}/records/{id}`).
 
 Files: `icons.js` (icon set), `app.js` (sync, dex, hunts, stats, auth), `detail.js` (detail sheet + PokéAPI),
-`timeline.js` (timeline tab), `compare.js` (Compare sheet, opened from Stats). Script order in `index.html`:
-icons.js, detail.js, timeline.js, compare.js, app.js.
+`timeline.js` (timeline tab), `compare.js` (Compare sheet, opened from Stats), `palette.js` (command palette:
+bolt button or Ctrl/⌘K). Script order in `index.html`: icons.js, detail.js, timeline.js, compare.js, palette.js, app.js.
 
 Startup: the app draws from this device's saved copy (IndexedDB database `poketracker`: `rows`, `pending`,
 `meta`) before anything else loads. `app.js` then loads Firebase Auth, checks sign-in and syncs with
@@ -16,6 +16,9 @@ there is no Firestore library.
 
 Live at https://krburchel.github.io/pokemontracker/
 
+- Legends: Z-A's list is Lumiose plus the Mega Dimension DLC's Hyperspace Pokédex, added here with
+  `python3 -I scripts/fetch_game_species.py legendsza lumiose-city hyperspace` (then `scripts/fetch_dex_numbers.py`).
+  The Mac app's copy doesn't have it, so re-copying `games.json` from there would drop it.
 - `data/species.json`, `data/games.json` are copied from the Mac app's Resources; `data/badges.json` is
   generated from its `Services/GymData.swift`. Re-copy when those change. `data/exclusives.json` (version exclusives) comes from the Mac
   project's `scripts/fetch_exclusives.py`.
