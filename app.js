@@ -1589,29 +1589,74 @@ function backupMessage(text, ok = true) {
   msg.classList.toggle('ok', ok);
 }
 
+// Hands a file to the user. Phones: the share sheet (Save to Files / Drive).
+// Computers: a normal download. False when the share sheet was dismissed.
+async function saveFile(file) {
+  if (matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: file.name });
+    } catch (e) {
+      if (e.name === 'AbortError') return false;
+      throw e;
+    }
+  } else {
+    const url = URL.createObjectURL(file);
+    const a = Object.assign(document.createElement('a'), { href: url, download: file.name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+  return true;
+}
+
+// ---- CSV export -------------------------------------------------------------
+// Every catch as a spreadsheet row. Same columns as the Mac app's export, plus
+// `versions` (which copy of a paired game). For reading in a spreadsheet only:
+// the JSON backup is the one that can be restored.
+const CSV_COLUMNS = ['species_id', 'species_name', 'game_id', 'game_name', 'is_shiny', 'playthrough_id',
+  'playthrough_name', 'versions', 'notes', 'tags', 'caught_at'];
+const csvCell = (value) => {
+  const text = String(value ?? '');
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+// Rows in game order, then playthrough, then each game's dex order, regular before shiny.
+function buildCatchesCSV() {
+  const gameAt = new Map(GAMES.map((g, i) => [g.id, i]));
+  const dexAt = new Map(GAMES.map((g) => [g.id, new Map(g.species.map((id, i) => [id, i]))]));
+  const place = (d) => [gameAt.get(d.gameId) ?? 999, d.playthroughId || '', dexAt.get(d.gameId)?.get(d.speciesId) ?? 99999, d.isShiny ? 1 : 0];
+  const catches = live('catch').map((r) => r.data).sort((a, b) => {
+    const p = place(a), q = place(b);
+    return p[0] - q[0] || String(p[1]).localeCompare(String(q[1])) || p[2] - q[2] || p[3] - q[3];
+  });
+  const lines = catches.map((d) => {
+    const game = GAMES.find((g) => g.id === d.gameId);
+    const labels = (d.versions || []).map((vid) => versionsOf(d.gameId).find((v) => v.id === vid)?.label || vid);
+    return [d.speciesId, speciesName(d.speciesId), d.gameId, game?.name || d.gameId, d.isShiny ? 'true' : 'false',
+      d.playthroughId || '', d.playthroughId ? store.rows.get(d.playthroughId)?.data.name || '' : 'Main',
+      labels.join('; '), d.notes || '', tagsOf(d.tagsRaw).join(', '), d.caughtAt || ''].map(csvCell).join(',');
+  });
+  return { count: catches.length, text: [CSV_COLUMNS.join(','), ...lines].join('\r\n') + '\r\n' };
+}
+
+// Returns what to tell the user, or '' when the share sheet was dismissed.
+async function exportCSV() {
+  const { count, text } = buildCatchesCSV();
+  if (!count) return 'No catches to export yet.';
+  const name = `poketracker-catches-${localDate(nowISO())}.csv`;
+  // The leading BOM makes Excel read names like Flabébé as UTF-8.
+  if (!await saveFile(new File(['\uFEFF', text], name, { type: 'text/csv' }))) return '';
+  return `Saved ${name} (${count.toLocaleString()} catch${count === 1 ? '' : 'es'}).`;
+}
+
 async function exportBackup() {
   const records = [...store.rows.values()].filter((r) => !r.deleted && BACKUP_CHECKS[r.kind])
     .map(({ id, kind, data }) => ({ id, kind, data }));
   const now = new Date();
   const json = JSON.stringify({ app: 'PokéTracker', format: BACKUP_FORMAT, exportedAt: now.toISOString(), records }, null, 1);
   const name = `poketracker-backup-${localDate(now.toISOString())}.json`;
-  const file = new File([json], name, { type: 'application/json' });
-  // Phones: the share sheet (Save to Files / Drive). Computers: a normal download.
-  if (matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file], title: name });
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-      throw e;
-    }
-  } else {
-    const url = URL.createObjectURL(file);
-    const a = Object.assign(document.createElement('a'), { href: url, download: name });
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-  }
+  if (!await saveFile(new File([json], name, { type: 'application/json' }))) return;
   prefs.lastBackupAt = now.toISOString();
   savePrefs();
   renderBackup();
@@ -1995,6 +2040,10 @@ function wireEvents() {
     exportBackup().catch((e) => backupMessage(`Couldn't save the backup: ${e.message || e}`, false));
   });
   $('#backup-import').addEventListener('click', () => { backupMessage(''); $('#backup-file').click(); });
+  $('#csv-export').addEventListener('click', () => {
+    backupMessage('');
+    exportCSV().then((said) => backupMessage(said), (e) => backupMessage(`Couldn't export: ${e.message || e}`, false));
+  });
   $('#backup-file').addEventListener('change', (e) => {
     const file = e.target.files[0];
     e.target.value = '';

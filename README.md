@@ -35,7 +35,8 @@ Live at https://krburchel.github.io/pokemontracker/
 - `icons.js` is the shared line-icon set (tab bar, toolbar, markers, timeline).
 - Dex extras: box view (`boxesOf` in app.js: 30 per box, Gen 2 20, filled in the same order as the grid, so
   regional forms sit right after their base Pokémon, HOME included; none for GO / Let's Go), mark or unmark everything shown (Filters sheet),
-  an Undo toast whenever a catch is removed (`writeWithUndo`), and saved filter sets (`prefs.savedFilters`,
+  an Undo toast whenever a catch is removed (`writeWithUndo`), CSV export of catches (Settings → Backup;
+  `buildCatchesCSV`, the Mac app's columns plus `versions`), and saved filter sets (`prefs.savedFilters`,
   kept per device in localStorage, not synced).
 - Hunts: Space adds +1 with a keyboard, and the screen stays on while counting (wake lock, dropped after
   10 minutes without a tap).

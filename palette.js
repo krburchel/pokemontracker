@@ -79,6 +79,7 @@ function paletteResults(query) {
     }]] : []),
     ['Settings', 'gear', 'sync account sprites sign out', () => $('#sync-btn').click()],
     ['Download backup', 'note', 'export save file', () => exportBackup().catch((e) => showToast(`Couldn't save the backup: ${e.message || e}`))],
+    ['Export catches as a spreadsheet (CSV)', 'note', 'excel sheets csv export', () => exportCSV().then((said) => said && showToast(said), (e) => showToast(`Couldn't export: ${e.message || e}`))],
     ['Sync now', 'start', 'refresh upload', syncNow],
   ];
   for (const [label, ico, extra, run] of actions) add(2, `${label} ${extra}`, { kind: 'Action', label, art: icon(ico), run });

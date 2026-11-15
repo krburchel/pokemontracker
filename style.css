@@ -597,3 +597,4 @@ dialog.sheet.bottom {
 .pal-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pal-label small, .pal-kind { color: var(--muted); font-size: 12px; }
 .pal-body .hint { text-align: center; }
+.set-actions .span { grid-column: 1 / -1; }
