@@ -456,7 +456,8 @@ dialog.sheet.bottom {
 .choice { display: flex; flex-wrap: wrap; gap: 6px; }
 .choice button { font-size: 13px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); }
 .choice button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: transparent; font-weight: 600; }
-.choice button.type[aria-pressed="true"] { background: var(--tc); color: #fff; }
+/* "tchip", not "type": the .type badge style would turn unselected chips white-on-white. */
+.choice button.tchip[aria-pressed="true"] { background: var(--tc); color: #fff; text-shadow: 0 1px 1px rgb(0 0 0 / .3); }
 .sheet-actions { display: flex; gap: 8px; position: sticky; bottom: 0; background: var(--card); padding-top: 6px; }
 .sheet-actions button { flex: 1; padding: 12px; background: var(--bg); }
 .sheet-actions .primary { background: var(--accent); }

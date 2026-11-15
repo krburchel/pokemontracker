@@ -1,8 +1,10 @@
 // App files: network-first so updates show up right away, cached copy when offline.
 // Sprites and PokéAPI data: cache-first, since they never change.
 // Firebase sync and sign-in requests (googleapis.com) are never cached.
-var CACHE = 'poketracker-v13';
-var SPRITES = 'poketracker-sprites-v1';
+var CACHE = 'poketracker-v14';
+// v2: remote sprites are now fetched with CORS. v1 held them as opaque responses,
+// which browsers count as several MB each against the storage quota.
+var SPRITES = 'poketracker-sprites-v2';
 var POKEAPI = 'poketracker-pokeapi-v1';
 var ASSETS = [
   './', './index.html', './style.css', './fonts/rubik-latin.woff2', './icons.js', './app.js', './detail.js', './timeline.js', './manifest.json',
@@ -54,7 +56,8 @@ self.addEventListener('install', function (e) {
 
 self.addEventListener('activate', function (e) {
   e.waitUntil(caches.keys().then(function (keys) {
-    return Promise.all(keys.filter(function (k) { return k !== CACHE && k !== SPRITES && k !== POKEAPI; })
+    // Only this app's caches: every app on krburchel.github.io shares one cache store.
+    return Promise.all(keys.filter(function (k) { return k.indexOf('poketracker-') === 0 && k !== CACHE && k !== SPRITES && k !== POKEAPI; })
       .map(function (k) { return caches.delete(k); }));
   }).then(function () { return self.clients.claim(); }));
 });
@@ -69,7 +72,7 @@ self.addEventListener('fetch', function (e) {
     e.respondWith(caches.open(url.hostname === 'pokeapi.co' ? POKEAPI : SPRITES).then(function (c) {
       return c.match(req).then(function (hit) {
         return hit || fetch(req).then(function (res) {
-          if (res.ok || res.type === 'opaque') c.put(req, res.clone());
+          if (res.ok) c.put(req, res.clone());
           return res;
         });
       });

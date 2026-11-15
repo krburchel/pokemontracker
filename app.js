@@ -150,8 +150,12 @@ function spriteURL(id, shiny, large = false) {
   return large ? `${SPRITE_CDN}other/home/${shiny ? 'shiny/' : ''}${id}.png`
     : `sprites/home/${shiny ? 's' : 'r'}-${id}.webp`;
 }
-const spriteImg = (id, shiny, attrs = '', large = false) =>
-  `<img ${attrs} alt="" draggable="false" src="${spriteURL(id, shiny, large)}" data-fallback="${pixelSpriteURL(id, shiny)}">`;
+// Sprites from the CDN load with CORS (crossorigin) so the service worker caches
+// them at their real size; without it each one counts as several MB of storage.
+const spriteImg = (id, shiny, attrs = '', large = false) => {
+  const src = spriteURL(id, shiny, large);
+  return `<img ${attrs} alt="" draggable="false"${src.startsWith(SPRITE_CDN) ? ' crossorigin="anonymous"' : ''} src="${src}" data-fallback="${pixelSpriteURL(id, shiny)}">`;
+};
 // Skip the DOM write when the markup hasn't changed.
 function setHTML(el, html) {
   if (el._html === html) return;
@@ -594,7 +598,7 @@ function renderFilterSheet() {
     list.map(([v, label]) => {
       const on = String(prefs[key]) === String(v);
       const style = key === 'type' ? ` style="--tc:${TYPE_COLORS[v]}"` : '';
-      return `<button class="${key === 'type' ? 'type' : ''}" data-v="${esc(v)}" aria-pressed="${on}"${style}>${esc(label)}</button>`;
+      return `<button class="${key === 'type' ? 'tchip' : ''}" data-v="${esc(v)}" aria-pressed="${on}"${style}>${esc(label)}</button>`;
     }).join('') + '</div></section>').join('');
 }
 
@@ -1491,6 +1495,7 @@ async function boot() {
     const img = e.target;
     if (img.tagName === 'IMG' && img.dataset.fallback && img.src !== img.dataset.fallback) {
       img.dataset.src = img.getAttribute('src');
+      img.crossOrigin = 'anonymous';
       img.src = img.dataset.fallback;
       img.classList.add('pixel');
     }
