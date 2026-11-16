@@ -622,3 +622,32 @@ dialog.sheet.bottom {
 .pal-label small, .pal-kind { color: var(--muted); font-size: 12px; }
 .pal-body .hint { text-align: center; }
 .set-actions .span { grid-column: 1 / -1; }
+
+/* ---- Wide screens ----------------------------------------------------------
+   The tab bar becomes a rail down the left side; on the Dex tab the details
+   sheet docks to the right of the grid instead of covering it. */
+.cell { scroll-margin: calc(var(--topbar-h, 58px) + 112px) 0 84px; }
+.cell:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.cell.sel { outline: 3px solid var(--text); outline-offset: 1px; }
+@media (min-width: 900px) {
+  .app { padding-left: 84px; padding-bottom: 24px; }
+  .tabbar {
+    top: 0; right: auto; width: 84px;
+    flex-direction: column; justify-content: flex-start; gap: 4px;
+    padding: calc(64px + env(safe-area-inset-top)) 8px 12px;
+    border-top: 0; border-right: 1px solid var(--line);
+  }
+  .tabbar button { flex: 0 0 auto; padding: 10px 4px; border-radius: 12px; }
+  .tabbar button.on { background: var(--accent-soft); }
+  .toast { bottom: 24px; }
+  .cell { scroll-margin-bottom: 24px; }
+}
+@media (min-width: 1100px) {
+  .app.with-panel { padding-right: 400px; }
+  #detail-dlg.docked {
+    position: fixed; inset: 0 0 0 auto; z-index: 6;
+    width: 400px; height: 100dvh; max-height: none; margin: 0;
+    border-radius: 0; border-left: 1px solid var(--line);
+  }
+  #detail-dlg.docked #detail-body { height: 100%; max-height: none; }
+}

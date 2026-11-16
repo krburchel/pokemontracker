@@ -43,6 +43,12 @@ Live at https://krburchel.github.io/pokemontracker/
   are 100000 + the PokéAPI pokemon-form id (Unown B 110001), females are 200000 + the species id. Each entry has
   `sprite` (PokéAPI file name, e.g. `201-b`, `female/3`) and `apiId` (the pokemon its stats load from). The Mac
   app doesn't know these ids.
+- Wide screens (CSS at the end of style.css): from 900px the tab bar is a rail down the left; from 1100px, on
+  the Dex tab, the detail sheet opens docked on the right instead of over the grid (`detailDocks` /
+  `openDialog(dlg, false)`; `#detail-dlg.docked`, `.app.with-panel`). It is a non-modal dialog, so code that
+  asks "is a dialog in the way?" checks `dialog:modal`, not `dialog[open]`. The docked panel shows the Pokémon
+  last opened (outlined in the grid), follows the arrow keys, and closes with Esc, its ✕, Back or a tab change.
+  Grid keys (`onDexKey`): arrows, Home / End, Enter or Space to mark, I for details.
 - `icons.js` is the shared line-icon set (tab bar, toolbar, markers, timeline).
 - Dex extras: box view (`boxesOf` in app.js: 30 per box, Gen 2 20, filled in the same order as the grid, so
   regional forms sit right after their base Pokémon, HOME included; none for GO / Let's Go), mark or unmark everything shown (Filters sheet),

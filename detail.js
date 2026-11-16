@@ -154,7 +154,15 @@ function openDetail(speciesId, { push = false, keepHistory = false } = {}) {
   detailState.expanded = new Set();
   const dlg = $('#detail-dlg');
   renderDetail();
-  openDialog(dlg);
+  // Wide window on the Dex tab: beside the grid (see detailDocks in app.js). Otherwise over it.
+  if (!dlg.open && detailDocks()) {
+    dlg.classList.add('docked');
+    $('#app').classList.add('with-panel');
+    openDialog(dlg, false);
+  } else {
+    openDialog(dlg);
+  }
+  markDetailCell();
   $('#detail-body').scrollTop = 0;
   const sp = SPECIES_BY_ID.get(speciesId);
   loadDetail(sp).then(() => { if (detailState.id === speciesId) renderDetailRemote(); })

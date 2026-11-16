@@ -181,7 +181,7 @@ function showToast(text, action = null, onAction = null, timeout = action ? 0 : 
   if (!el) return;
   clearTimeout(toastTimer);
   // An open dialog makes everything outside it untappable, so the toast moves inside it.
-  const host = [...document.querySelectorAll('dialog[open]')].pop() || document.body;
+  const host = [...document.querySelectorAll('dialog:modal')].pop() || document.body;
   if (el.parentNode !== host) host.append(el);
   el.innerHTML = `<span>${esc(text)}</span>` + (action ? `<button type="button">${esc(action)}</button>` : '');
   el.hidden = false;
@@ -201,9 +201,16 @@ const dialogStack = [];        // open dialogs, oldest first
 const closedByBack = new Set();
 let popsToIgnore = 0;          // history.back() calls of our own still on their way
 
-function openDialog(dlg) {
+// `modal: false` opens it beside the page instead of over it (the docked details panel).
+function openDialog(dlg, modal = true) {
   if (dlg.open) return;
-  dlg.showModal();
+  if (modal) {
+    dlg.showModal();
+  } else {
+    const focused = document.activeElement;
+    dlg.show();
+    focused?.focus?.({ preventScroll: true });   // show() moves focus into the panel; keep it in the grid
+  }
   dialogStack.push(dlg);
   history.pushState({ ptDialogs: dialogStack.length }, '');
 }
@@ -826,6 +833,7 @@ function showTab(tab) {
   savePrefs();
   if (!TABS.includes(tab)) tab = prefs.tab = 'dex';
   if (tab === 'timeline') timelineShown = TIMELINE_PAGE;
+  if (tab !== 'dex') closeDockedDetail();
   for (const t of TABS) $(`#tab-${t}`).hidden = t !== tab;
   $('#app').dataset.tab = tab;
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
@@ -1213,6 +1221,7 @@ function renderDex() {
         }).join('') + '</div></section>' });
     }
     morphChildren(grid, items.length ? items : nothing);
+    markDetailCell();
     return;
   }
 
@@ -1240,6 +1249,67 @@ function renderDex() {
       (vs.length ? `<span class="vtags">${exclusiveTag(game.id, s.id)}${versionsFor(s.id, target).map((v) => versionTag(game.id, v)).join('')}</span>` : '') +
       `</button>` };
   }) : nothing);
+  markDetailCell();
+}
+
+// ---- Wide screens: details panel beside the dex, arrow keys in the grid ---------
+// On a wide window the detail sheet docks to the right of the dex instead of
+// covering it, so the grid stays usable. It shows the Pokémon last opened, and
+// follows the arrow keys.
+const WIDE = matchMedia('(min-width: 1100px)');
+const detailDocks = () => WIDE.matches && prefs.tab === 'dex' && !document.querySelector('dialog:modal');
+const detailDocked = () => $('#detail-dlg').open && $('#detail-dlg').classList.contains('docked');
+function closeDockedDetail() {
+  if (detailDocked()) $('#detail-dlg').close();
+}
+// Outlines the cell whose details are in the docked panel.
+function markDetailCell() {
+  const id = detailDocked() ? String(detailState.id) : null;
+  for (const el of document.querySelectorAll('#dex-grid .cell.sel')) if (el.dataset.id !== id) el.classList.remove('sel');
+  if (id) $(`#dex-grid .cell[data-id="${id}"]`)?.classList.add('sel');
+}
+
+// Arrow keys move between Pokémon (Home / End jump to the ends); Enter or Space
+// marks the focused one as a tap would, and I opens its details.
+let followTimer = null;
+function onDexKey(e) {
+  const cell = e.target.closest?.('.cell');
+  if (!cell || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'i' || e.key === 'I') {
+    e.preventDefault();
+    openDetail(Number(cell.dataset.id));
+    return;
+  }
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+  const cells = [...document.querySelectorAll('#dex-grid .cell')];
+  const i = cells.indexOf(cell);
+  let next = null;
+  if (e.key === 'ArrowLeft') next = cells[i - 1];
+  else if (e.key === 'ArrowRight') next = cells[i + 1];
+  else if (e.key === 'Home') next = cells[0];
+  else if (e.key === 'End') next = cells[cells.length - 1];
+  else {
+    // Up / Down: the nearest row that way, then the closest cell across (works for box view too).
+    const from = cell.getBoundingClientRect();
+    const dir = e.key === 'ArrowDown' ? 1 : -1;
+    let best = Infinity;
+    for (const c of cells) {
+      const r = c.getBoundingClientRect();
+      const dy = (r.top - from.top) * dir;
+      if (dy < 2) continue;
+      const score = dy * 10000 + Math.abs(r.left + r.width / 2 - (from.left + from.width / 2));
+      if (score < best) { best = score; next = c; }
+    }
+  }
+  e.preventDefault();
+  if (!next || next === cell) return;
+  next.focus({ preventScroll: true });
+  next.scrollIntoView({ block: 'nearest' });
+  if (detailDocked()) {
+    clearTimeout(followTimer);
+    const id = Number(next.dataset.id);
+    followTimer = setTimeout(() => { if (detailDocked() && detailState.id !== id) openDetail(id); }, 180);
+  }
 }
 
 // After a search or filter changes the list: if its start has scrolled up out of
@@ -1276,8 +1346,11 @@ function onDexTap(e) {
   const id = Number(cell.dataset.id);
   if (prefs.mode === 'info') { openDetail(id); return; }
   const game = currentGame();
+  const focused = document.activeElement === cell;
   const added = tapCatch(id, game.id, prefs.mode === 'shiny', prefs.playthroughId || null, activeVersion(game.id));
   renderDex();
+  // The cell is rebuilt when its state changes: keep the keyboard on it.
+  if (focused) $(`#dex-grid .cell[data-id="${id}"]`)?.focus({ preventScroll: true });
   if (added) {
     const fresh = $(`#dex-grid .cell[data-id="${id}"]`);
     fresh?.classList.add('pop');
@@ -1307,7 +1380,7 @@ function bumpHunt(id, step = 1) {
 
 function onHuntKey(e) {
   if (e.code !== 'Space' || e.repeat || prefs.tab !== 'hunts' || $('#app').hidden) return;
-  if (document.querySelector('dialog[open]')) return;
+  if (document.querySelector('dialog:modal')) return;
   if (e.target.closest?.('button, input, select, textarea, summary, a')) return;
   const hunt = keyHunt();
   if (!hunt) return;
@@ -2000,6 +2073,25 @@ function wireEvents() {
   $('#dex-search').addEventListener('input', (e) => { search = e.target.value; renderDex(); showDexStart(); });
   const grid = $('#dex-grid');
   grid.addEventListener('click', onDexTap);
+  grid.addEventListener('keydown', onDexKey);
+  // The docked panel: tidy up when it closes, Esc closes it, and a window made
+  // narrow turns it back into the usual sheet.
+  $('#detail-dlg').addEventListener('close', () => {
+    $('#detail-dlg').classList.remove('docked');
+    $('#app').classList.remove('with-panel');
+    markDetailCell();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !detailDocked() || document.querySelector('dialog:modal')) return;
+    if (e.target.closest?.('input, textarea, select')) return;
+    closeDockedDetail();
+  });
+  WIDE.addEventListener('change', () => {
+    if (!detailDocked() || WIDE.matches) return;
+    const id = detailState.id;
+    $('#detail-dlg').close();
+    openDetail(id);
+  });
   grid.addEventListener('pointerdown', onDexPointerDown);
   grid.addEventListener('pointermove', onDexPointerMove);
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) grid.addEventListener(ev, cancelPress);
@@ -2009,7 +2101,7 @@ function wireEvents() {
     e.preventDefault();
     cancelPress();
     // A long-press may already have opened it.
-    if (!$('#detail-dlg').open) openDetail(Number(cell.dataset.id));
+    if (!$('#detail-dlg').open || detailDocked()) openDetail(Number(cell.dataset.id));
   });
   $('#badge-strip').addEventListener('click', (e) => {
     const b = e.target.closest('[data-badge]');

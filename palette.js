@@ -190,7 +190,7 @@ function runPalette(i) {
 }
 
 function openPalette() {
-  if ($('#app').hidden || document.querySelector('dialog[open]')) return;
+  if ($('#app').hidden || document.querySelector('dialog:modal')) return;
   $('#palette-input').value = '';
   renderPalette();
   openDialog($('#palette-dlg'));
