@@ -41,10 +41,12 @@ function loadDetail(sp) {
   if (!detailCache.has(sp.id)) {
     const p = (async () => {
       const baseId = sp.baseSpeciesId ?? sp.id;
+      // Extra HOME forms carry apiId: the PokéAPI pokemon their stats come from.
+      const apiId = sp.apiId ?? sp.id;
       const [pokemon, species, encounters] = await Promise.all([
-        fetchJSON(`https://pokeapi.co/api/v2/pokemon/${sp.id}/`),
+        fetchJSON(`https://pokeapi.co/api/v2/pokemon/${apiId}/`),
         fetchJSON(`https://pokeapi.co/api/v2/pokemon-species/${baseId}/`),
-        fetchJSON(`https://pokeapi.co/api/v2/pokemon/${sp.id}/encounters`).catch(() => []),
+        fetchJSON(`https://pokeapi.co/api/v2/pokemon/${apiId}/encounters`).catch(() => []),
       ]);
       const chain = species.evolution_chain?.url ? await fetchJSON(species.evolution_chain.url) : null;
       return {

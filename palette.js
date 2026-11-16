@@ -117,7 +117,7 @@ function paletteResults(query) {
   // Pokémon, by name or National Dex number.
   const number = /^#?\d+$/.test(words.join('')) ? Number(words.join('').replace('#', '')) : null;
   const species = [];
-  for (const sp of SPECIES) {
+  for (const sp of [...SPECIES, ...shownForms()]) {
     const score = number != null ? ((sp.baseSpeciesId ?? sp.id) === number ? 0 : -1) : palScore(sp.name.toLowerCase(), words);
     if (score >= 0) species.push({ score, sp });
   }
@@ -136,7 +136,7 @@ function paletteResults(query) {
     const word = quick.shiny ? 'shiny' : 'caught';
     const pt = ptFor(quick.game.id) || null;
     const index = catchIndex();
-    const matches = SPECIES.filter((sp) => dex.has(sp.id))
+    const matches = [...SPECIES, ...shownForms()].filter((sp) => dex.has(sp.id))
       .map((sp) => ({ sp, score: palScore(sp.name.toLowerCase(), quick.words) })).filter((m) => m.score >= 0)
       .sort((a, b) => a.score - b.score).slice(0, 3);
     for (const { sp, score } of matches) {

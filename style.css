@@ -496,6 +496,7 @@ dialog.sheet.bottom {
 .set-sec { border-top: 1px solid var(--line); padding: 12px 0; font-size: 14px; }
 .set-sec:first-of-type { border-top: 0; padding-top: 0; }
 .set-sec p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.set-note { display: block; font-weight: 400; font-size: 12px; line-height: 1.3; margin-top: 2px; }
 .set-head { font-weight: 600; }
 .set-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
 .set-actions button { background: var(--bg); font-size: 14px; padding: 10px 8px; }

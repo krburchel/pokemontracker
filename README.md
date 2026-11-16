@@ -32,6 +32,17 @@ Live at https://krburchel.github.io/pokemontracker/
   version of paired games (`{game}-0.webp`, `{game}-1.webp`); counts are in `GAME_LOGOS` in app.js.
 - `sprites/home/{r|s}-{id}.webp` are 144px copies of PokéAPI's HOME 3D renders (regular/shiny) for grids;
   the detail sheet loads the full-size render. Settings → Pokémon sprites switches to pixel sprites.
+- HOME forms (Settings → HOME forms: Off / Forms / Forms + ♀; `prefs.homeForms`, per device, off by default):
+  `data/forms.json` holds 204 extra forms that stay in HOME (Unown letters, Vivillon patterns, Alcremie, Rotom,
+  cap Pikachu…) and the 98 females with a visible gender difference, plus `baseNames` (what the plain entry is
+  called beside its forms: "Unown A"). `applyHomeForms` in app.js inserts them into HOME's list right after
+  their species (female first, then forms), so the grid, box view, Stats and Compare all follow. Only HOME lists
+  them. Rebuild with `python3 scripts/fetch_forms.py` (needs Pillow; reads PokéAPI's CSV tables and HOME renders);
+  what's left out and why is in `SKIP` / `SKIP_SPECIES` at the top of that script. Ids are permanent because
+  catches are saved by id: a form that is its own PokéAPI pokemon keeps that id (Heat Rotom 10008), other forms
+  are 100000 + the PokéAPI pokemon-form id (Unown B 110001), females are 200000 + the species id. Each entry has
+  `sprite` (PokéAPI file name, e.g. `201-b`, `female/3`) and `apiId` (the pokemon its stats load from). The Mac
+  app doesn't know these ids.
 - `icons.js` is the shared line-icon set (tab bar, toolbar, markers, timeline).
 - Dex extras: box view (`boxesOf` in app.js: 30 per box, Gen 2 20, filled in the same order as the grid, so
   regional forms sit right after their base Pokémon, HOME included; none for GO / Let's Go), mark or unmark everything shown (Filters sheet),
