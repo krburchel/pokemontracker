@@ -119,7 +119,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
 .tabbar button.on { color: var(--accent); }
 
 /* Dex */
-.controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 12px; }
+.controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-bottom: 8px; }
 .row { display: flex; gap: 8px; }
 .row > * { flex: 1; }
 .seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 2px; flex: 0 0 auto; }
@@ -158,6 +158,29 @@ main { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
 .cell.shiny { box-shadow: inset 0 0 0 2px var(--shiny); }
 .cell .badge { position: absolute; top: 4px; right: 6px; font-size: 13px; }
 .cell .note-dot { position: absolute; top: 4px; left: 6px; font-size: 11px; }
+/* Compact grid (Settings): sprite and number only, five across on a phone. */
+.grid.compact { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 6px; }
+.grid.compact .cell { padding: 3px 2px 4px; border-radius: 10px; contain-intrinsic-size: auto 60px auto 74px; }
+.grid.compact .cell img { width: 52px; height: 52px; }
+.grid.compact .cell .num { font-size: 10px; }
+.grid.compact .cell .badge { top: 1px; right: 3px; font-size: 11px; }
+.vdots { position: absolute; top: 4px; left: 4px; display: flex; gap: 2px; }
+.vdots i { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 1px var(--card); }
+
+/* Search, Filters and the tap mode stay in view while the dex scrolls. On a
+   phone the title bar scrolls away on this tab so the pinned bar is all that stays. */
+.pinbar {
+  position: sticky; top: var(--topbar-h, 58px); z-index: 4;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px;
+  margin: -4px -16px 6px; padding: 4px 16px 6px;
+  background: var(--bg);
+}
+#dex-hint { margin-bottom: 8px; }
+@media (max-width: 600px) {
+  .app[data-tab="dex"] .topbar { position: static; }
+  .app[data-tab="dex"] .pinbar { top: 0; padding-top: calc(4px + env(safe-area-inset-top)); }
+}
+
 .cell.pop { animation: pop .35s ease-out; }
 @keyframes pop { 50% { transform: scale(1.08); } }
 .empty { padding: 32px 0; text-align: center; color: var(--muted); }

@@ -65,6 +65,9 @@
           <button id="badge-pill" class="badge-pill" aria-expanded="false" aria-controls="badge-strip" hidden></button>
         </div>
         <div id="badge-strip" class="badge-strip" hidden></div>
+      </div>
+      <!-- Stays in view while the dex scrolls. -->
+      <div class="pinbar">
         <div class="toolbar">
           <label class="searchbox"><span id="search-icon"></span>
             <input id="dex-search" type="search" placeholder="Search" aria-label="Search"></label>
@@ -79,8 +82,8 @@
           </div>
           <div id="version-row" class="version-row" role="group" aria-label="Which version taps mark" hidden></div>
         </div>
-        <p id="dex-hint" class="hint" hidden>Tip: long-press (or right-click) any Pokémon for details, notes and tags.</p>
       </div>
+      <p id="dex-hint" class="hint" hidden>Tip: long-press (or right-click) any Pokémon for details, notes and tags.</p>
       <div id="dex-grid" class="grid"></div>
     </section>
 
@@ -127,6 +130,13 @@
       <button data-sprites="pixel">Pixel</button>
     </div>
   </section>
+  <section class="set-sec setting">
+    <span class="set-head">Dex grid</span>
+    <div class="seg" role="group" aria-label="Dex grid size">
+      <button data-density="large">Large</button>
+      <button data-density="compact">Compact</button>
+    </div>
+  </section>
   <section class="set-sec backup">
     <div class="backup-head"><span class="set-head">Backup</span><small id="backup-status" class="muted"></small></div>
     <div class="set-actions">
@@ -150,6 +160,9 @@
     </label>
     <div id="hunt-species-results" class="picker"></div>
     <div id="hunt-recs" class="recs"></div>
+    <label>Game
+      <select id="hunt-game"></select>
+    </label>
     <label>Method
       <select id="hunt-method"></select>
     </label>
@@ -171,6 +184,9 @@
     <label>Caught in
       <select id="caught-game"></select>
     </label>
+    <div id="caught-version-field" class="rec-versions" hidden>
+      <span class="muted">Which copy</span><span id="caught-versions" class="rec-versions"></span>
+    </div>
     <div class="dlg-actions">
       <button type="button" class="ghost" data-close>Cancel</button>
       <button type="submit" class="primary">Mark Caught</button>

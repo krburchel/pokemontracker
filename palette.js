@@ -77,6 +77,10 @@ function paletteResults(query) {
       savePrefs();
       showTab('dex');
     }]] : []),
+    [prefs.density === 'compact' ? 'Large dex grid' : 'Compact dex grid', 'boxes', 'grid size small big density more per screen', () => {
+      setDensity(prefs.density === 'compact' ? 'large' : 'compact');
+      showTab('dex');
+    }],
     ['Settings', 'gear', 'sync account sprites sign out', () => $('#sync-btn').click()],
     ['Download backup', 'note', 'export save file', () => exportBackup().catch((e) => showToast(`Couldn't save the backup: ${e.message || e}`))],
     ['Export catches as a spreadsheet (CSV)', 'note', 'excel sheets csv export', () => exportCSV().then((said) => said && showToast(said), (e) => showToast(`Couldn't export: ${e.message || e}`))],

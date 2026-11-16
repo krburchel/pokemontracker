@@ -549,14 +549,21 @@ async function pull() {
   return changed;
 }
 
+// Edits upload shortly after the last one. Hunt counting is `lazy`: taps collect
+// and go up together every COUNT_FLUSH_MS, so a long hunt isn't one upload per
+// tap. Either way the change is already saved on this device.
+const COUNT_FLUSH_MS = 5000;
 let flushTimer = null;
 let flushing = false;
-function scheduleFlush(delay = 600) {
+function scheduleFlush(delay = 600, lazy = false) {
+  if (lazy && flushTimer) return;   // an upload is already on its way
   clearTimeout(flushTimer);
-  flushTimer = setTimeout(flush, delay);
+  flushTimer = setTimeout(flush, lazy ? COUNT_FLUSH_MS : delay);
 }
 
 async function flush() {
+  clearTimeout(flushTimer);
+  flushTimer = null;
   if (flushing || !store.pending.size || !signedIn()) return;
   flushing = true;
   const uid = store.userId;
@@ -589,7 +596,8 @@ async function flush() {
   const sent = batch.filter((r) => store.pending.get(r.id) === r);
   for (const r of sent) store.pending.delete(r.id);
   localTx((rows, pending) => sent.forEach((r) => pending.delete(r.id)));
-  if (store.pending.size) scheduleFlush(0);
+  // Edited again mid-upload: keep the timer that edit set, or start one if it already ran out.
+  if (store.pending.size) { if (!flushTimer) scheduleFlush(); }
   else syncNow();
 }
 
@@ -634,12 +642,12 @@ function setStatus(status, error = '') {
   if ($('#account-dlg').open) renderAccount();
 }
 
-function write(kind, id, data, deleted = false) {
-  writeMany([{ kind, id, data, deleted }]);
+function write(kind, id, data, deleted = false, lazy = false) {
+  writeMany([{ kind, id, data, deleted }], lazy);
 }
 
 // Several writes in one save (a restore can be thousands of rows).
-function writeMany(list) {
+function writeMany(list, lazy = false) {
   const saved = [];
   for (const { kind, id, data, deleted = false } of list) {
     const row = { id, kind, data, deleted };
@@ -649,7 +657,7 @@ function writeMany(list) {
     saved.push([full, row]);
   }
   localTx((rows, pending) => { for (const [full, row] of saved) { rows.put(full); pending.put(row); } });
-  scheduleFlush();
+  scheduleFlush(600, lazy);
 }
 
 const live = (kind) => [...store.rows.values()].filter((r) => r.kind === kind && !r.deleted);
@@ -754,6 +762,7 @@ const prefs = Object.assign({
   tab: 'dex', gameId: 'home', playthroughId: '', mode: 'regular',
   gen: 'all', type: 'all', status: 'all', tag: 'all', excl: 'all', lastCaughtGame: 'sv', versionByGame: {},
   reviewYear: null, badgesExpanded: false, spriteStyle: 'home', hintSeen: false, lastBackupAt: null, view: 'grid',
+  density: 'large',   // dex grid size on this device: large | compact
   savedFilters: [],   // [{id, name, f: {status, excl, gen, type, tag}}], kept on this device
 }, readJSON(PREFS_KEY) || {});
 const savePrefs = () => writeJSON(PREFS_KEY, prefs);
@@ -778,6 +787,7 @@ function showTab(tab) {
   if (!TABS.includes(tab)) tab = prefs.tab = 'dex';
   if (tab === 'timeline') timelineShown = TIMELINE_PAGE;
   for (const t of TABS) $(`#tab-${t}`).hidden = t !== tab;
+  $('#app').dataset.tab = tab;
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#title').textContent = TITLES[tab];
   render();
@@ -941,6 +951,7 @@ async function onSavedFilterTap(e) {
   savePrefs();
   renderFilterSheet();
   renderDex();
+  showDexStart();
   return true;
 }
 
@@ -1136,7 +1147,9 @@ function renderDex() {
   viewBtn.classList.toggle('active', boxed);
   viewBtn.setAttribute('aria-pressed', boxed);
   const grid = $('#dex-grid');
+  const compact = prefs.density === 'compact' && !boxed;
   grid.classList.toggle('boxes', boxed);
+  grid.classList.toggle('compact', compact);
   const nothing = [{ key: 'empty', html: '<p class="empty">Nothing matches these filters.</p>' }];
 
   if (boxed) {
@@ -1166,6 +1179,17 @@ function renderDex() {
     const caught = has(s.id, false);
     const shiny = has(s.id, true);
     const cls = ['cell', caught && 'caught', shiny && 'shiny'].filter(Boolean).join(' ');
+    // Compact: sprite and number only, with a dot per version it's marked in.
+    if (compact) {
+      const num = gameDexNum(game.id, s);
+      const dots = versionsFor(s.id, target).map((vid) => vs.find((v) => v.id === vid)).filter(Boolean)
+        .map((v) => `<i style="background:${v.color}" title="${esc(v.label)}"></i>`).join('');
+      return { key: s.id, html: `<button class="${cls}" data-id="${s.id}" aria-pressed="${target ? shiny : caught}" aria-label="${esc(s.name)}" title="${esc(s.name)} ${esc(num)}">` +
+        `${shiny ? `<span class="badge" title="Shiny owned">${icon('shiny')}</span>` : ''}` +
+        `${dots ? `<span class="vdots">${dots}</span>` : ''}` +
+        spriteImg(s.id, shiny, 'loading="lazy" decoding="async"') +
+        `<span class="num">${esc(num.slice(num.lastIndexOf('#')))}</span></button>` };
+    }
     return { key: s.id, html: `<button class="${cls}" data-id="${s.id}" aria-pressed="${target ? shiny : caught}">` +
       `${shiny ? `<span class="badge" title="Shiny owned">${icon('shiny')}</span>` : ''}` +
       `${recs.get(s.id)?.notes ? `<span class="note-dot" title="Has notes">${icon('note')}</span>` : ''}` +
@@ -1174,6 +1198,14 @@ function renderDex() {
       (vs.length ? `<span class="vtags">${exclusiveTag(game.id, s.id)}${versionsFor(s.id, target).map((v) => versionTag(game.id, v)).join('')}</span>` : '') +
       `</button>` };
   }) : nothing);
+}
+
+// After a search or filter changes the list: if its start has scrolled up out of
+// view, bring it back to just under the pinned bar.
+function showDexStart() {
+  const bar = $('.pinbar').getBoundingClientRect();
+  const top = $('#dex-grid').getBoundingClientRect().top;
+  if (top < bar.bottom) window.scrollBy(0, top - bar.bottom);
 }
 
 // Long-press (touch) or right-click (mouse) on a cell opens its detail sheet.
@@ -1226,7 +1258,7 @@ function keyHunt() {
 function bumpHunt(id, step = 1) {
   const row = store.rows.get(id);
   if (!row) return;
-  write('hunt', id, { ...row.data, encounters: Math.max(0, (row.data.encounters || 0) + step) });
+  write('hunt', id, { ...row.data, encounters: Math.max(0, (row.data.encounters || 0) + step) }, false, true);
   renderHunts();
   keepAwake();
 }
@@ -1290,7 +1322,7 @@ function renderHunts() {
         ${spriteImg(d.speciesId, true)}
         <div class="meta">
           <h3>${esc(speciesName(d.speciesId))}</h3>
-          <div class="sub">${esc(d.method)}${d.shinyCharm ? ' · Shiny Charm' : ''}${nPhases ? ` · ${nPhases} phase${nPhases > 1 ? 's' : ''}` : ''}</div>
+          <div class="sub">${huntGame(d) ? `${esc(huntGame(d).shortName)} · ` : ''}${esc(d.method)}${d.shinyCharm ? ' · Shiny Charm' : ''}${nPhases ? ` · ${nPhases} phase${nPhases > 1 ? 's' : ''}` : ''}</div>
         </div>
       </div>
       <div class="counter">
@@ -1336,7 +1368,7 @@ function renderHunts() {
   const mini = (h, button) => `<div class="mini" data-id="${esc(h.id)}">
       ${spriteImg(h.data.speciesId, true, 'loading="lazy"')}
       <div class="meta">${esc(speciesName(h.data.speciesId))}
-        <small>${(h.data.encounters || 0).toLocaleString()} encounters · ${esc(h.data.method)}</small></div>
+        <small>${(h.data.encounters || 0).toLocaleString()} encounters · ${esc(h.data.method)}${huntGame(h.data) ? ` · ${esc(huntGame(h.data).shortName)}` : ''}</small></div>
       ${button}
     </div>`;
 
@@ -1346,6 +1378,9 @@ function renderHunts() {
     ...(abandoned.length ? [{ key: 'abandoned', html: `<details class="archive"><summary>Abandoned (${abandoned.length})</summary>${abandoned.map((h) => mini(h, '<button data-act="resurrect">Resurrect</button>')).join('')}</details>` }] : []),
   ]);
 }
+
+// The game a hunt is being done in (hunts started before this was saved have none).
+const huntGame = (d) => (d.gameId && GAMES.find((g) => g.id === d.gameId)) || null;
 
 let countHuntId = null;
 let caughtHuntId = null;
@@ -1374,7 +1409,9 @@ function onHuntTap(e) {
       const step = btn.dataset.act === 'mod-plus' ? 1 : -1;
       if (d.method === 'Sparkling Power Sandwich') d.sandwichLevel = Math.max(0, Math.min(3, (d.sandwichLevel || 0) + step));
       else d.chainCount = Math.max(0, (d.chainCount || 0) + step);
-      break;
+      write('hunt', id, d, false, true);
+      renderHunts();
+      return;
     }
     case 'abandon':
       ask({ title: `Abandon the ${speciesName(d.speciesId)} hunt?`, body: 'You can resurrect it later from the Abandoned list.', ok: 'Abandon' }).then((yes) => {
@@ -1417,7 +1454,9 @@ function onHuntTap(e) {
     case 'caught':
       caughtHuntId = id;
       $('#caught-name').textContent = `${speciesName(d.speciesId)} after ${(d.encounters || 0).toLocaleString()} encounters`;
-      $('#caught-game').value = prefs.lastCaughtGame;
+      $('#caught-game').value = huntGame(d)?.id || prefs.lastCaughtGame;
+      caughtVersion = null;
+      renderCaughtVersions();
       openDialog($('#caught-dlg'));
       return;
   }
@@ -1458,6 +1497,18 @@ function makeSpeciesPicker(input, results, onPick = () => {}) {
   return picker;
 }
 
+// "Shiny caught!" dialog: which copy of a paired game it's in. Starts on the
+// version the dex is marking for that game.
+let caughtVersion = null;
+function renderCaughtVersions() {
+  const gameId = $('#caught-game').value;
+  const vs = versionsOf(gameId);
+  if (!vs.some((v) => v.id === caughtVersion)) caughtVersion = activeVersion(gameId);
+  $('#caught-version-field').hidden = !vs.length;
+  $('#caught-versions').innerHTML = vs.map((v) =>
+    `<button type="button" class="vbtn ${v.id === caughtVersion ? 'on' : ''}" style="--vc:${v.color}" data-version="${v.id}" aria-pressed="${v.id === caughtVersion}">${esc(v.label)}</button>`).join('');
+}
+
 let huntPicker = null;
 let phasePicker = null;
 let huntMods = {};   // sandwich/chain values from a tapped recommendation
@@ -1476,6 +1527,7 @@ function renderRecommendations(speciesId) {
     const b = e.target.closest('[data-rec]');
     if (!b) return;
     const r = recs[Number(b.dataset.rec)];
+    $('#hunt-game').value = r.game.id;
     $('#hunt-method').value = r.method;
     $('#hunt-charm').checked = r.charm;
     huntMods = { sandwichLevel: r.mods.sandwichLevel || 0, chainCount: r.mods.chainCount || 0 };
@@ -1868,7 +1920,7 @@ function wireEvents() {
     savePrefs();
     renderDex();
   });
-  document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('.iconseg button').forEach((b) => b.addEventListener('click', () => {
     prefs.mode = b.dataset.mode;
     savePrefs();
     renderDex();
@@ -1892,16 +1944,18 @@ function wireEvents() {
     savePrefs();
     renderFilterSheet();
     renderDex();
+    showDexStart();
   });
   $('#filter-reset').addEventListener('click', () => {
     Object.assign(prefs, NO_FILTERS);
     savePrefs();
     renderFilterSheet();
     renderDex();
+    showDexStart();
   });
   $('#filter-done').addEventListener('click', () => $('#filter-dlg').close());
   $('#filter-dlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
-  $('#dex-search').addEventListener('input', (e) => { search = e.target.value; renderDex(); });
+  $('#dex-search').addEventListener('input', (e) => { search = e.target.value; renderDex(); showDexStart(); });
   const grid = $('#dex-grid');
   grid.addEventListener('click', onDexTap);
   grid.addEventListener('pointerdown', onDexPointerDown);
@@ -1964,8 +2018,8 @@ function wireEvents() {
     openDialog($('#hunt-dlg'));
     $('#hunt-species').focus();
   });
-  // Changing method or charm by hand drops a tapped recommendation's modifiers.
-  $('#hunt-method').addEventListener('change', () => {
+  // Changing game or method by hand drops a tapped recommendation's modifiers.
+  for (const id of ['#hunt-method', '#hunt-game']) $(id).addEventListener('change', () => {
     huntMods = {};
     $('#hunt-recs').querySelectorAll('.rec').forEach((x) => x.classList.remove('on'));
   });
@@ -1974,6 +2028,7 @@ function wireEvents() {
     if (!speciesId) { e.preventDefault(); $('#hunt-species').focus(); return; }
     write('hunt', uuid(), {
       speciesId,
+      gameId: $('#hunt-game').value || null,
       method: $('#hunt-method').value,
       encounters: Math.max(0, parseInt($('#hunt-start').value, 10) || 0),
       startedAt: nowISO(),
@@ -2018,14 +2073,26 @@ function wireEvents() {
     const row = store.rows.get(caughtHuntId);
     if (!row) return;
     const gameId = $('#caught-game').value;
+    const version = versionsOf(gameId).some((v) => v.id === caughtVersion) ? caughtVersion : null;
     prefs.lastCaughtGame = gameId;
+    if (version) prefs.versionByGame = { ...(prefs.versionByGame || {}), [gameId]: version };
     savePrefs();
-    write('hunt', row.id, { ...row.data, completedAt: nowISO() });
+    write('hunt', row.id, { ...row.data, gameId, completedAt: nowISO() });
+    // Add the shiny to that game's dex (Main), in that version. One already
+    // there is kept, and gains the version if it didn't have it.
     const index = catchIndex();
-    if (!index.has(catchKey({ speciesId: row.data.speciesId, gameId, isShiny: true, playthroughId: null }))) {
-      toggleCatch(row.data.speciesId, gameId, true, null, index);
+    const have = index.get(catchKey({ speciesId: row.data.speciesId, gameId, isShiny: true, playthroughId: null }))?.[0];
+    if (!have || (version && !(have.data.versions || []).includes(version))) {
+      toggleCatch(row.data.speciesId, gameId, true, null, index, version);
     }
     renderHunts();
+  });
+  $('#caught-game').addEventListener('change', renderCaughtVersions);
+  $('#caught-versions').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-version]');
+    if (!b) return;
+    caughtVersion = b.dataset.version;
+    renderCaughtVersions();
   });
   watchDialogs();
   wirePalette();
@@ -2055,7 +2122,9 @@ function wireEvents() {
     applySpriteStyle();
     render();
   }));
+  document.querySelectorAll('[data-density]').forEach((b) => b.addEventListener('click', () => setDensity(b.dataset.density)));
   $('#sign-out').addEventListener('click', async () => {
+    if (store.pending.size) await flush().catch(() => {});
     if (store.pending.size && !await ask({ title: 'Sign out with unsent changes?',
       body: "Some changes haven't uploaded yet and will be lost.", ok: 'Sign out' })) return;
     $('#account-dlg').close();
@@ -2079,6 +2148,19 @@ function applySpriteStyle() {
   });
 }
 
+function applyDensity() {
+  document.querySelectorAll('[data-density]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.density === prefs.density);
+    b.setAttribute('aria-pressed', b.dataset.density === prefs.density);
+  });
+}
+function setDensity(density) {
+  prefs.density = density === 'compact' ? 'compact' : 'large';
+  savePrefs();
+  applyDensity();
+  if (prefs.tab === 'dex') renderDex();
+}
+
 function fillStaticSelects() {
   const groups = [];
   for (const g of GAMES) {
@@ -2090,6 +2172,7 @@ function fillStaticSelects() {
   const options = groups.map((grp) => `<optgroup label="${grp.label}">` +
     grp.games.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('') + '</optgroup>').join('');
   $('#caught-game').innerHTML = options;
+  $('#hunt-game').innerHTML = '<option value="">Not decided yet</option>' + options;
   $('#hunt-method').innerHTML = METHODS.map((m) => `<option>${m}</option>`).join('');
 }
 
@@ -2112,6 +2195,12 @@ async function boot() {
   fillStaticSelects();
   wireEvents();
   applySpriteStyle();
+  applyDensity();
+  // The pinned dex bar sits just under the top bar, whatever height that is.
+  const topbar = $('.topbar');
+  const setTop = () => document.documentElement.style.setProperty('--topbar-h', `${topbar.offsetHeight}px`);
+  if (window.ResizeObserver) new ResizeObserver(setTop).observe(topbar);
+  setTop();
   document.querySelectorAll('.tabbar [data-icon]').forEach((b) => b.insertAdjacentHTML('afterbegin', icon(b.dataset.icon)));
   $('#search-icon').innerHTML = icon('search');
   $('#filter-icon').innerHTML = icon('filter');

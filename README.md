@@ -40,6 +40,14 @@ Live at https://krburchel.github.io/pokemontracker/
   kept per device in localStorage, not synced).
 - Hunts: Space adds +1 with a keyboard, and the screen stays on while counting (wake lock, dropped after
   10 minutes without a tap).
+  A hunt saves its game as `gameId` (from the suggestion tapped or the Game menu in New Shiny Hunt; older hunts
+  have none), shown on the card and used to prefill "Shiny caught!", which also asks which copy of a paired game
+  and saves it as the catch's `versions`. `gameId` is not in the Mac app's `SyncDTO` yet, so the Mac app would
+  drop it when it rewrites a hunt. Counting uploads at most every 5 s (`COUNT_FLUSH_MS`, the `lazy` flag on
+  `write`); every other edit still uploads 0.6 s after the last one.
+- Dex layout: Search, Filters and the tap mode sit in `.pinbar`, which stays under the top bar while the dex
+  scrolls (on phones the top bar scrolls away on the Dex tab instead). Settings → Dex grid switches to a compact
+  grid (`prefs.density`, per device): sprite and number only, a dot per version marked, five across on a phone.
 - `vendor/firebase` is the Firebase JS SDK 12.19.0 compat build of App + Auth (Apache 2.0), bundled for offline use.
 - **Bump `CACHE` in `sw.js` on every deploy.** The service worker serves app files from that version's saved
   copy, so without a bump nobody gets the change. A new file the app needs offline goes in `ASSETS` too.
