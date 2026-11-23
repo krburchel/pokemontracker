@@ -10,7 +10,7 @@ Files: `icons.js` (icon set), `app.js` (sync, dex, hunts, stats, auth), `detail.
 opened from Stats), `palette.js` (command palette: bolt button or Ctrl/⌘K). Script order in `index.html`: icons.js,
 detail.js, timeline.js, compare.js, tohome.js, palette.js, app.js.
 
-Games shown: HOME and the games on Switch / Switch 2, FireRed / LeafGreen included (`SHOWN_GAMES` in `app.js`). The older games and GO stay
+Games shown: HOME, GO and the games on Switch / Switch 2, FireRed / LeafGreen included (`SHOWN_GAMES` in `app.js`). The older games stay
 in `data/games.json`, and their catches, badges and playthroughs stay in the account and in JSON backups, but
 `live()` leaves them out everywhere else. Add an id to `SHOWN_GAMES` to bring a game back (and its logos to
 `ASSETS` in `sw.js`).

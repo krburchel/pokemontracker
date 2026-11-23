@@ -47,10 +47,10 @@ function writeJSON(key, value) {
 // ---------------------------------------------------------------------------
 let SPECIES = [];
 let SPECIES_BY_ID = new Map();
-// The games the app shows: HOME and the Switch / Switch 2 games. The older games
-// (and GO) stay in data/games.json, and their catches, badges and playthroughs
+// The games the app shows: HOME, GO and the games on Switch / Switch 2. The older
+// games stay in data/games.json, and their catches, badges and playthroughs
 // stay in the account and in backups, just out of sight. Add an id to bring one back.
-const SHOWN_GAMES = new Set(['home', 'frlg', 'letsgo', 'swsh', 'bdsp', 'legendsarceus', 'sv', 'legendsza']);
+const SHOWN_GAMES = new Set(['home', 'pogo', 'frlg', 'letsgo', 'swsh', 'bdsp', 'legendsarceus', 'sv', 'legendsza']);
 const GAME_KINDS = new Set(['catch', 'badge', 'playthrough']);   // records that belong to one game
 let GAMES = [];
 // Extra HOME forms (data/forms.json, from scripts/fetch_forms.py): forms that
