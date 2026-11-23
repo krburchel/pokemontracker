@@ -71,6 +71,7 @@ function paletteResults(query) {
   const actions = [
     ['New shiny hunt', 'hunts', 'start hunt', () => { showTab('hunts'); $('#new-hunt').click(); }],
     ['Compare two games', 'stats', 'transfer', openCompare],
+    ['Move to HOME', 'boxes', 'transfer missing not in home send', openToHome],
     ['Filters', 'filter', 'filter missing caught type generation', () => { showTab('dex'); $('#filter-btn').click(); }],
     ...(boxLayout(game.id) ? [[prefs.view === 'boxes' ? 'Grid view' : 'Box view', 'boxes', 'boxes grid view layout', () => {
       prefs.view = prefs.view === 'boxes' ? 'grid' : 'boxes';

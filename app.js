@@ -823,6 +823,7 @@ function render() {
   else renderStats();
   refreshDetailIfOpen();
   if ($('#compare-dlg').open) renderCompare();
+  if ($('#tohome-dlg').open) renderToHome();
 }
 
 // ---- Tabs -----------------------------------------------------------------
@@ -1663,6 +1664,8 @@ function renderStats() {
   const avg = doneHunts.length
     ? Math.round(doneHunts.reduce((n, h) => n + (h.encounters || 0), 0) / doneHunts.length) : 0;
 
+  const toHome = toHomeData(false).total;
+
   const tile = (n, label) => `<div class="tile"><b>${n.toLocaleString()}</b><span>${label}</span></div>`;
   const bar = (name, n, total) => `<div class="game-row"><div class="line"><span>${esc(name)}</span>` +
     `<span>${n} / ${total}</span></div><div class="bar"><i style="width:${(total ? (n / total) * 100 : 0).toFixed(1)}%"></i></div></div>`;
@@ -1709,6 +1712,8 @@ function renderStats() {
       ${tile(avg, 'avg encounters per shiny')}
     </div>
     <button class="card link-card" data-act="compare"><span>Compare two games</span><span class="muted">What one has that the other doesn't ›</span></button>
+    <button class="card link-card" data-act="tohome"><span>Move to HOME</span><span class="muted">${toHome
+      ? `${toHome.toLocaleString()} caught in your games ${toHome === 1 ? "isn't" : "aren't"} in HOME yet ›` : "What's caught in a game but not in HOME ›"}</span></button>
     ${almostCard}
     <div class="card"><h2>Progress by game</h2>
       ${started.map((x) => bar(x.g.name, x.caught, x.g.species.length)).join('') || '<p class="muted">Nothing caught yet.</p>'}
@@ -2121,12 +2126,14 @@ function wireEvents() {
   // Stats: a missing Pokémon opens its details
   $('#stats').addEventListener('click', (e) => {
     if (e.target.closest('[data-act="compare"]')) { openCompare(); return; }
+    if (e.target.closest('[data-act="tohome"]')) { openToHome(); return; }
     const b = e.target.closest('.missing [data-id]');
     if (b) openDetail(Number(b.dataset.id));
   });
   $('#compare-body').addEventListener('click', onCompareClick);
   $('#compare-body').addEventListener('change', onCompareChange);
   $('#compare-dlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.close(); });
+  wireToHome();
 
   // Timeline
   $('#timeline').addEventListener('change', (e) => {
