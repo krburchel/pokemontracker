@@ -286,7 +286,7 @@ function renderDetailRemote() {
         const list = [...locs];
         const shown = list.slice(0, 6).map(esc).join(', ');
         return `<div class="enc"><b>${esc(GAMES.find((g) => g.id === gid)?.shortName || gid)}</b><span>${shown}${list.length > 6 ? ` +${list.length - 6} more` : ''}</span></div>`;
-      }).join('') || '<p class="muted">No wild locations listed. PokéAPI only has them for Let\'s Go and Sword / Shield so far.</p>';
+      }).join('') || '<p class="muted">No wild locations listed. PokéAPI only has them for FireRed / LeafGreen, Let\'s Go and Sword / Shield so far.</p>';
     el.innerHTML = `
       ${d.flavor ? `<section class="detail-sec"><p class="flavor">${esc(d.flavor)}</p></section>` : ''}
       <section class="detail-sec"><h3>Base stats <small class="muted">· total ${total}</small></h3>${stats}</section>

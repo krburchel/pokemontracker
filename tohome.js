@@ -5,8 +5,9 @@
 // at a time. Tap one after moving it to mark it in HOME. Loaded before app.js.
 
 // The games that can still send Pokémon to HOME on their own, without Pokémon
-// Bank: GO (through GO Transporter), Let's Go (one way) and the Switch games.
-const HOME_SOURCES = new Set(['pogo', 'letsgo', 'swsh', 'bdsp', 'legendsarceus', 'sv', 'legendsza']);
+// Bank: GO (through GO Transporter), FireRed / LeafGreen on Switch and Let's Go
+// (both one way) and the other Switch games.
+const HOME_SOURCES = new Set(['pogo', 'frlg', 'letsgo', 'swsh', 'bdsp', 'legendsarceus', 'sv', 'legendsza']);
 
 // Caught means a record in any playthrough, in HOME and in the game.
 function toHomeData(shiny = !!prefs.toHomeShiny) {
