@@ -47,6 +47,11 @@ function writeJSON(key, value) {
 // ---------------------------------------------------------------------------
 let SPECIES = [];
 let SPECIES_BY_ID = new Map();
+// The games the app shows: HOME and the Switch / Switch 2 games. The older games
+// (and GO) stay in data/games.json, and their catches, badges and playthroughs
+// stay in the account and in backups, just out of sight. Add an id to bring one back.
+const SHOWN_GAMES = new Set(['home', 'letsgo', 'swsh', 'bdsp', 'legendsarceus', 'sv', 'legendsza']);
+const GAME_KINDS = new Set(['catch', 'badge', 'playthrough']);   // records that belong to one game
 let GAMES = [];
 // Extra HOME forms (data/forms.json, from scripts/fetch_forms.py): forms that
 // stay in HOME (Unown letters, Vivillon patterns, Alcremie...) and the females
@@ -706,7 +711,8 @@ function writeMany(list, lazy = false) {
   scheduleFlush(600, lazy);
 }
 
-const live = (kind) => [...store.rows.values()].filter((r) => r.kind === kind && !r.deleted);
+const live = (kind) => [...store.rows.values()].filter((r) => r.kind === kind && !r.deleted
+  && (!GAME_KINDS.has(kind) || SHOWN_GAMES.has(r.data.gameId)));
 
 // ---------------------------------------------------------------------------
 // Derived data
@@ -2328,7 +2334,8 @@ function fillStaticSelects() {
     grp.games.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('') + '</optgroup>').join('');
   $('#caught-game').innerHTML = options;
   $('#hunt-game').innerHTML = '<option value="">Not decided yet</option>' + options;
-  $('#hunt-method').innerHTML = METHODS.map((m) => `<option>${m}</option>`).join('');
+  const methods = METHODS.filter((m) => m === 'Other' || GAMES.some((g) => METHODS_BY_GAME[g.id]?.includes(m)));
+  $('#hunt-method').innerHTML = methods.map((m) => `<option>${m}</option>`).join('');
 }
 
 async function boot() {
@@ -2350,7 +2357,10 @@ async function boot() {
   BASE_NAMES = forms.baseNames || {};
   HAS_FEMALE = new Set(FORMS.filter((f) => f.kind === 'female').map((f) => f.baseSpeciesId));
   SPECIES_BY_ID = new Map([...species, ...FORMS].map((s) => [s.id, s]));
-  GAMES = games;
+  GAMES = games.filter((g) => SHOWN_GAMES.has(g.id));
+  // Saved choices that point at a hidden game.
+  if (!SHOWN_GAMES.has(prefs.gameId)) Object.assign(prefs, { gameId: 'home', playthroughId: '' });
+  if (!SHOWN_GAMES.has(prefs.lastCaughtGame)) prefs.lastCaughtGame = 'sv';
   HOME_SPECIES = games.find((g) => g.id === 'home')?.species || [];
   fillStaticSelects();
   wireEvents();

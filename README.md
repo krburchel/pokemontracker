@@ -6,8 +6,14 @@ notes/tags per catch), shiny hunts with phases/notes/best-method suggestions, ti
 synced through Firebase project `pokemon-tracker-8d5ac` (Firestore `users/{uid}/records/{id}`).
 
 Files: `icons.js` (icon set), `app.js` (sync, dex, hunts, stats, auth), `detail.js` (detail sheet + PokéAPI),
-`timeline.js` (timeline tab), `compare.js` (Compare sheet, opened from Stats), `palette.js` (command palette:
-bolt button or Ctrl/⌘K). Script order in `index.html`: icons.js, detail.js, timeline.js, compare.js, palette.js, app.js.
+`timeline.js` (timeline tab), `compare.js` (Compare sheet, opened from Stats), `tohome.js` (Move to HOME sheet,
+opened from Stats), `palette.js` (command palette: bolt button or Ctrl/⌘K). Script order in `index.html`: icons.js,
+detail.js, timeline.js, compare.js, tohome.js, palette.js, app.js.
+
+Games shown: HOME and the Switch / Switch 2 games only (`SHOWN_GAMES` in `app.js`). The older games and GO stay
+in `data/games.json`, and their catches, badges and playthroughs stay in the account and in JSON backups, but
+`live()` leaves them out everywhere else. Add an id to `SHOWN_GAMES` to bring a game back (and its logos to
+`ASSETS` in `sw.js`).
 
 Startup: the app draws from this device's saved copy (IndexedDB database `poketracker`: `rows`, `pending`,
 `meta`) before anything else loads. `app.js` then loads Firebase Auth, checks sign-in and syncs with

@@ -22,7 +22,7 @@ const POKEAPI_VERSIONS = {
   hgss: ['heartgold', 'soulsilver'], bw: ['black', 'white'], b2w2: ['black-2', 'white-2'],
   xy: ['x', 'y'], oras: ['omega-ruby', 'alpha-sapphire'], sumo: ['sun', 'moon'],
   usum: ['ultra-sun', 'ultra-moon'], letsgo: ['lets-go-pikachu', 'lets-go-eevee'],
-  swsh: ['sword', 'shield'], bdsp: ['brilliant-diamond', 'shining-pearl'],
+  swsh: ['sword', 'shield', 'the-isle-of-armor-sword', 'the-isle-of-armor-shield', 'the-crown-tundra-sword', 'the-crown-tundra-shield'], bdsp: ['brilliant-diamond', 'shining-pearl'],
   legendsarceus: ['legends-arceus'], sv: ['scarlet', 'violet'], legendsza: ['legends-z-a'],
 };
 
@@ -126,7 +126,7 @@ function parseEncounters(arr) {
     for (const vd of entry.version_details || []) {
       const v = vd.version?.name;
       for (const [gameId, versions] of Object.entries(POKEAPI_VERSIONS)) {
-        if (!versions.includes(v)) continue;
+        if (!versions.includes(v) || !SHOWN_GAMES.has(gameId)) continue;
         if (!byGame.has(gameId)) byGame.set(gameId, new Set());
         byGame.get(gameId).add(prettySlug(loc));
       }
@@ -286,7 +286,7 @@ function renderDetailRemote() {
         const list = [...locs];
         const shown = list.slice(0, 6).map(esc).join(', ');
         return `<div class="enc"><b>${esc(GAMES.find((g) => g.id === gid)?.shortName || gid)}</b><span>${shown}${list.length > 6 ? ` +${list.length - 6} more` : ''}</span></div>`;
-      }).join('') || '<p class="muted">No wild encounter data (often gifts, legendaries or newer games).</p>';
+      }).join('') || '<p class="muted">No wild locations listed. PokéAPI only has them for Let\'s Go and Sword / Shield so far.</p>';
     el.innerHTML = `
       ${d.flavor ? `<section class="detail-sec"><p class="flavor">${esc(d.flavor)}</p></section>` : ''}
       <section class="detail-sec"><h3>Base stats <small class="muted">· total ${total}</small></h3>${stats}</section>

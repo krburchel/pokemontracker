@@ -70,7 +70,7 @@ function renderToHome() {
     `${spriteImg(id, d.shiny, 'loading="lazy" decoding="async"')}<span>${esc(speciesName(id))}</span></button>` }))
     : []);
 
-  setHTML($('#tohome-foot'), 'From GO, Let\'s Go and the Switch games, which can send Pokémon to HOME. Press and hold one for its details.');
+  setHTML($('#tohome-foot'), 'Every game here can send Pokémon to HOME. Press and hold one for its details.');
 }
 
 // Marks catches in HOME's Main playthrough. The game's own catch stays as it is.
