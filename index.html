@@ -2,307 +2,88 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>PokéTracker</title>
-<meta name="description" content="Living dex and shiny hunt tracker, synced across your devices.">
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#e3350d" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="PokéTracker">
-<link rel="manifest" href="manifest.json">
-<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="preload" href="fonts/rubik-latin.woff2" as="font" type="font/woff2" crossorigin>
-<!-- Sign-in library: fetched early, run by app.js after the first screen is up. -->
-<link rel="preload" href="vendor/firebase/firebase-app-compat.js" as="script">
-<link rel="preload" href="vendor/firebase/firebase-auth-compat.js" as="script">
-<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>PokéTracker has moved</title>
+<link rel="canonical" href="https://kburchtree.cloud/pokemontracker/">
+<style>
+  :root { --bg: #f6f5f1; --fg: #1f1f1d; --muted: #6a6861; --accent: #2f6fde; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --fg: #ecebe6; --muted: #9c9a93; --accent: #7aa7ff; } }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 30rem; padding: 24px 16px; }
+  h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
+  p { margin: .5rem 0; color: var(--muted); }
+  a { color: var(--accent); }
+  button { font: inherit; padding: .4rem .8rem; margin-top: .5rem; }
+</style>
 </head>
 <body>
-
-<div id="auth" class="auth" hidden>
-  <div class="auth-card">
-    <img src="icon-192.png" alt="" width="72" height="72">
-    <h1>PokéTracker</h1>
-    <p class="muted">Sign in to keep your dex and hunts in sync on every device.</p>
-    <form id="auth-form">
-      <input id="auth-email" type="email" placeholder="Email" autocomplete="username" required>
-      <input id="auth-password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required>
-      <button type="submit" class="primary" data-mode="signin">Sign In</button>
-      <button type="submit" class="ghost" data-mode="signup">Create Account</button>
-    </form>
-    <div class="or"><span>or</span></div>
-    <button id="google-signin" class="google">Continue with Google</button>
-    <p id="auth-msg" class="msg" role="status"></p>
+<main>
+  <h1>PokéTracker has moved</h1>
+  <p>New address: <a id="go" href="https://kburchtree.cloud/pokemontracker/">kburchtree.cloud/pokemontracker</a></p>
+  <p id="note">Taking you there…</p>
+  <p>Added the old one to your Home Screen? Open the new address, add it to your Home Screen, then delete the old icon.</p>
+  <div id="big" hidden>
+    <p>You have a lot saved here, so it comes over as a file: save it, then pick it on the next page.</p>
+    <button id="save">Save my data</button>
+    <a id="next" href="#">Continue to the new address</a>
   </div>
-</div>
+</main>
+<script>
+// Hands this app's saved data (not sign-in tokens) to the new address, then sends you there.
+const APP = "pokemontracker";
+const RULE = null;
+const NEW = "https://kburchtree.cloud";
 
-<div id="app" class="app" hidden>
-  <header class="topbar">
-    <div class="brand">
-      <img class="logo" src="logo-90.webp" alt="" width="30" height="30">
-      <h1 id="title">Living Dex</h1>
-    </div>
-    <div class="top-actions">
-      <button id="palette-btn" class="sync-btn" aria-label="Jump to a Pokémon, game or action" title="Jump to… (Ctrl+K)"></button>
-      <button id="sync-btn" class="sync-btn" aria-label="Settings and sync status">
-        <span id="settings-icon"></span><span id="sync-dot" class="dot"></span>
-      </button>
-    </div>
-  </header>
+const mine = (k) => RULE && !(RULE.exclude || []).includes(k) &&
+  ((RULE.keys || []).includes(k) || (RULE.prefixes || []).some((p) => k.startsWith(p)));
 
-  <main>
-    <section id="tab-dex" class="tab">
-      <div class="controls">
-        <div class="row">
-          <button id="game-btn" class="game-btn" aria-haspopup="dialog"></button>
-          <select id="pt-select" aria-label="Playthrough"></select>
-        </div>
-        <div class="progress-row">
-          <div id="dex-progress" class="progress-line"></div>
-          <button id="badge-pill" class="badge-pill" aria-expanded="false" aria-controls="badge-strip" hidden></button>
-        </div>
-        <div id="badge-strip" class="badge-strip" hidden></div>
-      </div>
-      <!-- Stays in view while the dex scrolls. -->
-      <div class="pinbar">
-        <div class="toolbar">
-          <label class="searchbox"><span id="search-icon"></span>
-            <input id="dex-search" type="search" placeholder="Search" aria-label="Search"></label>
-          <button id="filter-btn" class="filter-btn" aria-haspopup="dialog"><span id="filter-icon"></span>Filters<span id="filter-count" class="count" hidden></span></button>
-          <button id="view-btn" class="filter-btn" aria-pressed="false" aria-label="Box view" title="Box view" hidden></button>
-        </div>
-        <div class="modebar">
-          <div class="seg iconseg" role="group" aria-label="What tapping a Pokémon does">
-            <button data-mode="regular" class="on" aria-label="Caught" title="Tap marks caught"></button>
-            <button data-mode="shiny" aria-label="Shiny" title="Tap marks shiny"></button>
-            <button data-mode="info" aria-label="Info" title="Tap opens details"></button>
-          </div>
-          <div id="version-row" class="version-row" role="group" aria-label="Which version taps mark" hidden></div>
-        </div>
-      </div>
-      <p id="dex-hint" class="hint" hidden>Tip: long-press (or right-click) any Pokémon for details, notes and tags.</p>
-      <div id="dex-grid" class="grid"></div>
-    </section>
+async function encode(text) {
+  let bytes = new TextEncoder().encode(text), kind = "p";
+  if (typeof CompressionStream === "function") {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+    bytes = new Uint8Array(await new Response(stream).arrayBuffer()); kind = "z";
+  }
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return kind + btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
-    <section id="tab-hunts" class="tab" hidden>
-      <button id="new-hunt" class="primary wide">New Hunt</button>
-      <p id="hunt-hint" class="hint" hidden></p>
-      <div id="hunt-list"></div>
-    </section>
+(async () => {
+  const rest = location.pathname.replace(new RegExp("^/" + APP + "/?"), "").replace(/^(index|404)\.html$/, "")
+    + location.search + location.hash;
+  const data = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (mine(k)) data[k] = localStorage.getItem(k);
+    }
+  } catch (e) { /* storage blocked: nothing to bring */ }
 
-    <section id="tab-timeline" class="tab" hidden>
-      <div id="timeline"></div>
-    </section>
+  const direct = NEW + "/" + APP + "/" + rest;
+  if (!Object.keys(data).length) { document.getElementById("go").href = direct; location.replace(direct); return; }
 
-    <section id="tab-stats" class="tab" hidden>
-      <div id="stats"></div>
-    </section>
-  </main>
-
-  <nav class="tabbar">
-    <button data-tab="dex" class="on" data-icon="dex">Dex</button>
-    <button data-tab="hunts" data-icon="hunts">Hunts</button>
-    <button data-tab="timeline" data-icon="timeline">Timeline</button>
-    <button data-tab="stats" data-icon="stats">Stats</button>
-  </nav>
-</div>
-
-<div id="toast" class="toast" role="status" hidden></div>
-
-<dialog id="account-dlg">
-  <h2>Settings</h2>
-  <section class="set-sec">
-    <div class="set-head">Sync</div>
-    <p id="account-email" class="muted"></p>
-    <p id="account-status" class="muted"></p>
-    <div class="set-actions">
-      <button id="sync-now">Sync now</button>
-      <button id="sign-out" class="danger">Sign out</button>
-    </div>
-  </section>
-  <section class="set-sec setting">
-    <span class="set-head">Pokémon sprites</span>
-    <div class="seg" role="group" aria-label="Sprite style">
-      <button data-sprites="home">HOME 3D</button>
-      <button data-sprites="pixel">Pixel</button>
-    </div>
-  </section>
-  <section class="set-sec setting">
-    <span class="set-head">Dex grid</span>
-    <div class="seg" role="group" aria-label="Dex grid size">
-      <button data-density="large">Large</button>
-      <button data-density="compact">Compact</button>
-    </div>
-  </section>
-  <section class="set-sec setting">
-    <span class="set-head">HOME forms<small class="muted set-note">Unown, Vivillon, Alcremie and more</small></span>
-    <div class="seg" role="group" aria-label="Extra forms in the HOME dex">
-      <button data-forms="off">Off</button>
-      <button data-forms="forms">Forms</button>
-      <button data-forms="all">Forms + ♀</button>
-    </div>
-  </section>
-  <section class="set-sec backup">
-    <div class="backup-head"><span class="set-head">Backup</span><small id="backup-status" class="muted"></small></div>
-    <div class="set-actions">
-      <button id="backup-export">Download backup</button>
-      <button id="backup-import">Restore from file…</button>
-      <button id="csv-export" class="span">Export catches as a spreadsheet (CSV)</button>
-    </div>
-    <input id="backup-file" type="file" accept=".json,application/json" hidden>
-    <p id="backup-msg" class="msg" role="status"></p>
-  </section>
-  <div class="dlg-actions">
-    <button class="primary" onclick="this.closest('dialog').close()">Done</button>
-  </div>
-</dialog>
-
-<dialog id="hunt-dlg">
-  <form id="hunt-form" method="dialog">
-    <h2>New Shiny Hunt</h2>
-    <label>Target
-      <input id="hunt-species" type="search" placeholder="Search Pokémon" autocomplete="off" required>
-    </label>
-    <div id="hunt-species-results" class="picker"></div>
-    <div id="hunt-recs" class="recs"></div>
-    <label>Game
-      <select id="hunt-game"></select>
-    </label>
-    <label>Method
-      <select id="hunt-method"></select>
-    </label>
-    <label class="check"><input id="hunt-charm" type="checkbox"> Shiny Charm</label>
-    <label>Starting encounters
-      <input id="hunt-start" type="number" min="0" value="0" inputmode="numeric">
-    </label>
-    <div class="dlg-actions">
-      <button type="button" class="ghost" data-close>Cancel</button>
-      <button type="submit" class="primary">Start Hunt</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="caught-dlg">
-  <form id="caught-form" method="dialog">
-    <h2>Shiny caught!</h2>
-    <p id="caught-name" class="muted"></p>
-    <label>Caught in
-      <select id="caught-game"></select>
-    </label>
-    <div id="caught-version-field" class="rec-versions" hidden>
-      <span class="muted">Which copy</span><span id="caught-versions" class="rec-versions"></span>
-    </div>
-    <div class="dlg-actions">
-      <button type="button" class="ghost" data-close>Cancel</button>
-      <button type="submit" class="primary">Mark Caught</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="phase-dlg">
-  <form id="phase-form" method="dialog">
-    <h2>Log a phase</h2>
-    <p id="phase-sub" class="muted"></p>
-    <label>Shiny you found
-      <input id="phase-species" type="search" placeholder="Search Pokémon" autocomplete="off" required>
-    </label>
-    <div id="phase-species-results" class="picker"></div>
-    <label>Notes
-      <input id="phase-notes" placeholder="Optional (e.g. kept it, nature)">
-    </label>
-    <div class="dlg-actions">
-      <button type="button" class="ghost" data-close>Cancel</button>
-      <button type="submit" class="primary">Log Phase</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="notes-dlg">
-  <form id="notes-form" method="dialog">
-    <h2>Hunt notes</h2>
-    <textarea id="notes-input" rows="5" placeholder="Location, setup, reset routine…"></textarea>
-    <div class="dlg-actions">
-      <button type="button" class="ghost" data-close>Cancel</button>
-      <button type="submit" class="primary">Save</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="ask-dlg">
-  <form id="ask-form" method="dialog">
-    <h2 id="ask-title"></h2>
-    <p id="ask-body" class="muted"></p>
-    <label id="ask-field" hidden><span id="ask-label"></span>
-      <input id="ask-input" autocomplete="off" maxlength="60"></label>
-    <div class="dlg-actions">
-      <button type="button" class="ghost" data-close>Cancel</button>
-      <button type="submit" class="primary" id="ask-ok" value="ok">OK</button>
-    </div>
-  </form>
-</dialog>
-
-<dialog id="filter-dlg" class="sheet bottom" aria-label="Filters">
-  <div class="filter-body">
-    <div class="grabber" aria-hidden="true"></div>
-    <h2>Filters</h2>
-    <div id="filter-groups"></div>
-    <div id="filter-bulk" class="filter-group"></div>
-    <div class="sheet-actions">
-      <button type="button" id="filter-reset">Reset</button>
-      <button type="button" id="filter-done" class="primary">Show results</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="game-dlg" class="sheet" aria-label="Choose a game">
-  <div class="game-dlg-body">
-    <div class="detail-top"><h2>Choose a game</h2>
-      <button class="ghost close" aria-label="Close" onclick="this.closest('dialog').close()">✕</button></div>
-    <div id="game-grid"></div>
-  </div>
-</dialog>
-
-<dialog id="palette-dlg" class="sheet" aria-label="Jump to">
-  <div class="pal-body">
-    <input id="palette-input" type="search" placeholder="Pokémon, game, tab or action" autocomplete="off" autocapitalize="off" spellcheck="false"
-      role="combobox" aria-expanded="true" aria-controls="palette-list" aria-label="Jump to">
-    <div id="palette-list" role="listbox"></div>
-    <p class="hint">Add a game to mark a catch: “pikachu violet”, “eevee home shiny”.</p>
-  </div>
-</dialog>
-
-<dialog id="compare-dlg" class="sheet" aria-label="Compare games">
-  <div id="compare-body"></div>
-</dialog>
-
-<dialog id="tohome-dlg" class="sheet" aria-label="Move to HOME">
-  <div id="tohome-body"><div id="tohome-head"></div><div id="tohome-grid"></div><p id="tohome-foot"></p></div>
-</dialog>
-
-<dialog id="detail-dlg" class="sheet" aria-label="Pokémon details">
-  <div id="detail-body"></div>
-</dialog>
-
-<dialog id="count-dlg">
-  <form id="count-form" method="dialog">
-    <h2>Set encounters</h2>
-    <input id="count-input" type="number" min="0" inputmode="numeric">
-    <div class="dlg-actions">
-      <button type="button" class="ghost" data-close>Cancel</button>
-      <button type="submit" class="primary">Save</button>
-    </div>
-  </form>
-</dialog>
-
-<script src="icons.js"></script>
-<script src="detail.js"></script>
-<script src="timeline.js"></script>
-<script src="compare.js"></script>
-<script src="tohome.js"></script>
-<script src="palette.js"></script>
-<script src="app.js"></script>
+  const params = new URLSearchParams({ app: APP, to: rest });
+  const packed = await encode(JSON.stringify(data)).catch(() => null);
+  if (packed && packed.length < 1500000) {
+    params.set("d", packed);
+    const url = NEW + "/move/#" + params;
+    document.getElementById("go").href = url;
+    location.replace(url);
+    return;
+  }
+  // Too big for a link: hand it over as a file instead.
+  params.set("file", "1");
+  document.getElementById("note").hidden = true;
+  document.getElementById("big").hidden = false;
+  document.getElementById("next").href = NEW + "/move/#" + params;
+  document.getElementById("save").onclick = () => {
+    const blob = new Blob([JSON.stringify({ app: APP, data })], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = APP + "-data.json"; a.click();
+  };
+})();
+</script>
 </body>
 </html>
